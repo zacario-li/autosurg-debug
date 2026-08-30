@@ -2,8 +2,9 @@
   "name": "autosurg-debug",
   "displayName": "AutoSurg Debug",
   "description": "Configure, control, and debug AutoSurg modules from VS Code.",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "publisher": "autosurg",
+  "icon": "media/icon.png",
   "author": {
     "name": "Zacario Li",
     "email": "zacario.li@outlook.com"
