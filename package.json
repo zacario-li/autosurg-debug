@@ -1,0 +1,78 @@
+{
+  "name": "autosurg-debug",
+  "displayName": "AutoSurg Debug",
+  "description": "Configure, control, and debug AutoSurg modules from VS Code.",
+  "version": "0.2.3",
+  "publisher": "autosurg",
+  "author": {
+    "name": "Zacario Li",
+    "email": "zacario.li@outlook.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zacario-li/autosurg-debug.git"
+  },
+  "homepage": "https://github.com/zacario-li/autosurg-debug#readme",
+  "bugs": {
+    "url": "https://github.com/zacario-li/autosurg-debug/issues"
+  },
+  "license": "MIT",
+  "files": ["dist", "media", "LICENSE", "README.md"],
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Debuggers", "Other"],
+  "activationEvents": ["onView:autosurg.modules", "onLanguage:yaml"],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "compile": "esbuild src/extension.ts --bundle --platform=node --external:vscode --outfile=dist/extension.js --sourcemap",
+    "check": "tsc -p ./ --noEmit"
+  },
+  "contributes": {
+    "commands": [
+      { "command": "autosurg.refresh", "title": "AutoSurg: Refresh", "icon": "$(refresh)" },
+      { "command": "autosurg.validate", "title": "AutoSurg: Validate Configuration", "icon": "$(check)" },
+      { "command": "autosurg.debug", "title": "AutoSurg: Debug Module", "icon": "$(debug-alt)" },
+      { "command": "autosurg.debugAllComputes", "title": "AutoSurg: Debug All Compute Modules", "icon": "$(server-process)" },
+      { "command": "autosurg.debugFullSystem", "title": "AutoSurg: Debug Full System", "icon": "$(debug-all)" },
+      { "command": "autosurg.start", "title": "AutoSurg: Start Module" },
+      { "command": "autosurg.stop", "title": "AutoSurg: Stop Module" },
+      { "command": "autosurg.restart", "title": "AutoSurg: Restart Module" }
+    ],
+    "viewsContainers": {
+      "activitybar": [{ "id": "autosurg", "title": "AutoSurg", "icon": "media/autosurg.svg" }]
+    },
+    "views": {
+      "autosurg": [{ "id": "autosurg.modules", "name": "Modules" }]
+    },
+    "menus": {
+      "view/title": [
+        { "command": "autosurg.refresh", "when": "view == autosurg.modules", "group": "navigation@4" },
+        { "command": "autosurg.validate", "when": "view == autosurg.modules", "group": "navigation@3" },
+        { "command": "autosurg.debugAllComputes", "when": "view == autosurg.modules", "group": "navigation@2" },
+        { "command": "autosurg.debugFullSystem", "when": "view == autosurg.modules", "group": "navigation@1" }
+      ],
+      "view/item/context": [
+        { "command": "autosurg.debug", "when": "view == autosurg.modules && viewItem =~ /autosurg\\.(compute|orchestrator)/", "group": "inline" },
+        { "command": "autosurg.start", "when": "view == autosurg.modules && viewItem =~ /autosurg\\.(module|compute|orchestrator)/", "group": "autosurg@1" },
+        { "command": "autosurg.stop", "when": "view == autosurg.modules && viewItem =~ /autosurg\\.(module|compute|orchestrator)/", "group": "autosurg@2" },
+        { "command": "autosurg.restart", "when": "view == autosurg.modules && viewItem =~ /autosurg\\.(module|compute|orchestrator)/", "group": "autosurg@3" }
+      ]
+    },
+    "configuration": {
+      "title": "AutoSurg",
+      "properties": {
+        "autosurg.configPath": { "type": "string", "default": "", "description": "Path to modules.yaml, relative to the workspace root when not absolute." },
+        "autosurg.controlHost": { "type": "string", "default": "localhost", "description": "ControlPlane host." },
+        "autosurg.controlPython": { "type": "string", "default": "python3", "description": "Python executable used for the ControlPlane client." },
+        "autosurg.debugPortBase": { "type": "number", "default": 5678, "minimum": 1024, "maximum": 65535, "description": "First port considered for temporary compute debugging." }
+      }
+    }
+  },
+  "dependencies": { "yaml": "^2.9.0" },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}
