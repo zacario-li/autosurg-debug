@@ -14,6 +14,7 @@ AutoSurg Debug 是用于管理和调试 AutoSurg Compute 模块及 Orchestrator 
 - 一键启动 Orchestrator 调试会话
 - 自动分配空闲的 debugpy 端口
 - 检查 YAML 语法、重复键、依赖引用和 path preset
+- 调试暂停时右键查看 Tensor / Mat 图像，支持切片、伪彩色和像素探针
 
 调试端口由插件临时分配并通过 ControlPlane 传递，不需要在 `modules.yaml` 中配置 `AUTOSURG_DEBUG_PORT`。
 
@@ -85,6 +86,23 @@ Orchestrator 与 Supervisor 运行在 `main.py` 进程中，不能像 Compute �
 
 插件会以 Debug 模式启动 `main.py`。
 
+## 调试时查看 Tensor / Mat
+
+在断点暂停后，可以用图形方式查看 `torch.Tensor`、`numpy.ndarray`、PIL Image、OpenCV 图像，以及 C++ `cv::Mat`。
+
+1. 在 Variables 或 Watch 窗口中右键变量，选择 `View as Image / Tensor`。
+2. 也可以在 Python 代码中选中表达式后按 `Ctrl+Alt+I`（macOS 为 `Cmd+Alt+I`）。
+3. 视图支持滚轮缩放、拖拽平移、Fit / 1:1、Batch/Channel 切片、伪彩色和 BGR/RGB 切换。
+4. 放大到 400% 以上会显示像素网格；鼠标悬停会显示坐标和原始数值。
+5. 默认开启 Auto：单步 F10 / F11 后，已打开的视图会自动刷新。
+6. 鼠标悬停在代码中的张量/图像变量上时，会显示迷你缩略图；点击 hover 里的链接可打开完整视图。
+7. 多通道张量可点击 `Grid` 平铺通道；点击某个缩略图进入该通道。
+8. `Snapshot` 保存当前画面，Diff 可选左右对比或残差热力图，也可与另一个表达式比较。
+
+数据在调试进程内存中编码为 PNG，通过 DAP 传到 Webview，不会写临时文件。
+
+悬停缩略图可用设置 `autosurg.tensorHover` 关闭。
+
 ## 配置检查
 
 点击 AutoSurg 模块视图顶部的检查按钮，或者执行：
@@ -99,6 +117,7 @@ Orchestrator 与 Supervisor 运行在 `main.py` 进程中，不能像 Compute �
 - `autosurg.controlHost`：ControlPlane 地址，默认 `localhost`
 - `autosurg.controlPython`：运行 ControlPlane 客户端的 Python，默认 `python3`
 - `autosurg.debugPortBase`：自动寻找调试端口的起始值，默认 `5678`
+- `autosurg.tensorHover`：调试暂停时在代码悬停处显示张量缩略图，默认开启
 
 ## 常见问题
 
