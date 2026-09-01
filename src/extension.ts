@@ -5,6 +5,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { LineCounter, parseDocument } from "yaml";
 import { registerTensorView } from "./tensorView";
+import { registerPlyView } from "./plyView";
 
 type JsonMap = Record<string, unknown>;
 
@@ -980,6 +981,7 @@ function readControlPort(configPath: string): number {
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   registerTensorView(context);
+  registerPlyView(context);
 
   const configPath = await resolveConfigPath();
   if (!configPath) {

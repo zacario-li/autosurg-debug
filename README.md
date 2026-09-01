@@ -18,6 +18,7 @@ AutoSurg Debug is a VS Code / Cursor extension for managing and debugging AutoSu
 - Automatic allocation of free debugpy ports
 - Checks YAML syntax, duplicate keys, dependency references, and path presets
 - Right-click Tensor / Mat image inspection while paused at a breakpoint, with slicing, pseudo-color, and a pixel probe
+- 3D point cloud viewer (WebGL): auto-detects `(N, 3..7)` tensors, Open3D / trimesh clouds, and `.ply` files, with orbit camera, RGB/intensity/height coloring, and point picking
 
 Debug ports are preferredly hot-injected into running workers or the `main.py` process via ControlPlane `start_debug`; no `AUTOSURG_DEBUG_PORT` configuration is needed in `modules.yaml`. Each Compute row in the sidebar has two debug buttons: the green plug is Hot-Attach, the orange cycle arrow is Restart-Attach. Orchestrator rows also have a green Hot-Attach; since all Orchestrators share the single `main.py` process, only one main-process debug session is created.
 
@@ -115,6 +116,18 @@ After a breakpoint pauses execution, you can visually inspect `torch.Tensor`, `n
 Data is encoded to PNG inside the debugged process memory and streamed to the webview over DAP—no temporary files are written.
 
 Hover thumbnails can be disabled with the `autosurg.tensorHover` setting.
+
+## Viewing Point Clouds
+
+Arrays with shape `(N, 3)` … `(N, 7)` (xyz, optional intensity or RGB), Open3D / trimesh point clouds, and `.ply` files are rendered as interactive 3D point clouds in the same viewer:
+
+1. Right-click a point-cloud variable while paused and choose `View as Image / Tensor`, force point-cloud rendering with `AutoSurg: View as Point Cloud (Force)` (Variables / Watch / selected code), or open a `.ply` file with `AutoSurg: Open Point Cloud (PLY)...` (also available from the Explorer right-click menu).
+2. Drag to orbit, Shift+drag (or middle-drag) to pan, wheel to zoom, `Fit` to re-center.
+3. `Color`: Auto / Gray / Intensity / RGB / Height colormap; `Up`: choose the Z / Y / X up axis; `Size`: point size in pixels.
+4. Hover a point to see its index, coordinates, and color/intensity.
+5. Auto-detection is a heuristic. Whenever a variable opens as an image/heatmap but you know it is a cloud, use the `View` selector in the viewer toolbar (`Auto` / `Image` / `Point Cloud`) — the forced path also accepts `(3, N)` transposed, `(B, N, C)` batched, and `(N, 2)` planar layouts that auto-detection ignores.
+
+Clouds larger than 150k points are uniformly downsampled for transfer; statistics in the sidebar always report the full cloud. PLY support covers ASCII, binary_little_endian, and binary_big_endian files with `x/y/z`, optional `red/green/blue` and `intensity` properties.
 
 ## Validating Configuration
 

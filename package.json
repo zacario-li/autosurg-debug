@@ -2,7 +2,7 @@
   "name": "autosurg-debug",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "publisher": "autosurg",
   "icon": "media/icon.png",
   "author": {
@@ -38,11 +38,12 @@
     "onView:autosurg.modules",
     "onLanguage:yaml",
     "onDebug",
-    "onCommand:autosurg.visualizeTensor"
+    "onCommand:autosurg.visualizeTensor",
+    "onCommand:autosurg.viewPly"
   ],
   "main": "./dist/extension.js",
   "scripts": {
-    "compile": "esbuild src/extension.ts --bundle --platform=node --external:vscode --outfile=dist/extension.js --sourcemap",
+    "compile": "esbuild src/extension.ts --bundle --platform=node --external:vscode --outfile=dist/extension.js --sourcemap && esbuild media/tensorView.src.js --bundle --format=iife --outfile=media/tensorView.js --minify",
     "check": "tsc -p ./ --noEmit"
   },
   "contributes": {
@@ -62,14 +63,14 @@
         "title": "%command.debug%",
         "icon": "$(debug-alt)"
       },
-        {
-          "command": "autosurg.debugHot",
-          "title": "%command.debugHot%",
-          "icon": {
-            "light": "media/debug-hot.svg",
-            "dark": "media/debug-hot.svg"
-          }
-        },
+      {
+        "command": "autosurg.debugHot",
+        "title": "%command.debugHot%",
+        "icon": {
+          "light": "media/debug-hot.svg",
+          "dark": "media/debug-hot.svg"
+        }
+      },
       {
         "command": "autosurg.debugRestart",
         "title": "%command.debugRestart%",
@@ -105,6 +106,15 @@
         "title": "%command.visualizeTensor%",
         "category": "AutoSurg",
         "icon": "$(file-media)"
+      },
+      {
+        "command": "autosurg.viewPly",
+        "title": "%command.viewPly%"
+      },
+      {
+        "command": "autosurg.viewCloud",
+        "title": "%command.viewCloud%",
+        "category": "AutoSurg"
       }
     ],
     "keybindings": [
@@ -207,11 +217,21 @@
           "command": "autosurg.visualizeTensor",
           "when": "inDebugMode",
           "group": "3_visualize"
+        },
+        {
+          "command": "autosurg.viewCloud",
+          "when": "inDebugMode",
+          "group": "3_visualize"
         }
       ],
       "debug/watch/context": [
         {
           "command": "autosurg.visualizeTensor",
+          "when": "inDebugMode",
+          "group": "3_visualize"
+        },
+        {
+          "command": "autosurg.viewCloud",
           "when": "inDebugMode",
           "group": "3_visualize"
         }
@@ -221,6 +241,18 @@
           "command": "autosurg.visualizeTensor",
           "when": "inDebugMode && editorHasSelection && editorLangId == python",
           "group": "3_visualize"
+        },
+        {
+          "command": "autosurg.viewCloud",
+          "when": "inDebugMode && editorHasSelection && editorLangId == python",
+          "group": "3_visualize"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "autosurg.viewPly",
+          "when": "resourceExtname == .ply",
+          "group": "navigation@2"
         }
       ]
     },
@@ -265,6 +297,7 @@
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.2",
+    "three": "^0.185.1",
     "typescript": "^7.0.2"
   }
 }

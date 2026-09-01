@@ -12,6 +12,8 @@
   "command.stop": "AutoSurg: Stop Module",
   "command.restart": "AutoSurg: Restart Module",
   "command.visualizeTensor": "以图像 / Tensor 查看",
+  "command.viewPly": "AutoSurg: 打开点云 (PLY)…",
+  "command.viewCloud": "AutoSurg: 以点云查看 (强制)",
   "viewContainers.autosurg": "AutoSurg",
   "views.modules": "模块",
   "config.title": "AutoSurg",

@@ -12,6 +12,8 @@
   "command.stop": "AutoSurg: Stop Module",
   "command.restart": "AutoSurg: Restart Module",
   "command.visualizeTensor": "View as Image / Tensor",
+  "command.viewPly": "AutoSurg: Open Point Cloud (PLY)...",
+  "command.viewCloud": "AutoSurg: View as Point Cloud (Force)",
   "viewContainers.autosurg": "AutoSurg",
   "views.modules": "Modules",
   "config.title": "AutoSurg",

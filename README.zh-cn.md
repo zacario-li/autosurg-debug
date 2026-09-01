@@ -18,6 +18,7 @@ AutoSurg Debug 是用于管理和调试 AutoSurg Compute 模块及 Orchestrator 
 - 自动分配空闲的 debugpy 端口
 - 检查 YAML 语法、重复键、依赖引用和 path preset
 - 调试暂停时右键查看 Tensor / Mat 图像，支持切片、伪彩色和像素探针
+- WebGL 3D 点云查看：自动识别 `(N, 3..7)` 张量、Open3D / trimesh 点云和 `.ply` 文件，支持轨道旋转、RGB / 强度 / 高度着色和逐点拾取
 
 调试端口优先通过 ControlPlane `start_debug` 热插到已运行的 worker 或 `main.py` 主进程，不需要在 `modules.yaml` 中配置 `AUTOSURG_DEBUG_PORT`。侧边栏 Compute 行有两个调试按钮：绿色插头为 Hot-Attach，橙色循环箭头为 Restart-Attach。Orchestrator 行同样有绿色 Hot-Attach；所有 Orchestrator 共享 `main.py` 进程，因此只会产生一个主进程调试会话。
 
@@ -115,6 +116,18 @@ Orchestrator 与 Supervisor 运行在同一个 `main.py` 进程中。对任意�
 数据在调试进程内存中编码为 PNG，通过 DAP 传到 Webview，不会写临时文件。
 
 悬停缩略图可用设置 `autosurg.tensorHover` 关闭。
+
+## 查看点云
+
+形状为 `(N, 3)` ～ `(N, 7)`（xyz，可带强度或 RGB）的数组、Open3D / trimesh 点云对象以及 `.ply` 文件，会在同一个查看器中以可交互的 3D 点云渲染：
+
+1. 暂停时右键点云变量选择 `View as Image / Tensor`；用 `AutoSurg: View as Point Cloud (Force)`（变量 / Watch 右键或选中代码）跳过自动判断强制按点云渲染；或用 `AutoSurg: Open Point Cloud (PLY)...` 打开 `.ply` 文件（资源管理器右键菜单也提供入口）。
+2. 拖拽旋转，Shift+拖拽（或中键拖拽）平移，滚轮缩放，`Fit` 重新居中。
+3. `Color` 可选 Auto / Gray / Intensity / RGB / Height 着色；`Up` 切换 Z / Y / X 上方向；`Size` 调节点大小。
+4. 鼠标悬停在点上可查看序号、坐标和颜色 / 强度值。
+5. 自动识别只是启发式。若变量被当成图像/热图打开但你确定它是点云，直接用查看器工具栏的 `View` 下拉（Auto / Image / Point Cloud）强制切换——强制模式还支持自动识别不会碰的 `(3, N)` 转置、`(B, N, C)` 批量和 `(N, 2)` 平面布局。
+
+超过 15 万点会均匀降采样后再传输，侧栏统计始终基于完整点云。PLY 支持 ASCII、binary_little_endian、binary_big_endian 三种格式，可带 `red/green/blue` 与 `intensity` 属性。
 
 ## 配置检查
 

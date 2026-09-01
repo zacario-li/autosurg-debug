@@ -2,7 +2,7 @@
 # Never writes files. Slices first so a 4D CUDA tensor is not copied wholesale.
 
 
-def _autosurg_viz(obj, batch=0, channel=0, max_side=384, rgb_mode=1, mode="single", max_channels=64, cell_side=48, token="", offset=0, length=16000):
+def _autosurg_viz(obj, batch=0, channel=0, max_side=384, rgb_mode=1, mode="single", max_channels=64, cell_side=48, token="", offset=0, length=16000, cloud_mode=0):
     import json
 
     mode_name = str(mode or "single")
@@ -20,6 +20,10 @@ def _autosurg_viz(obj, batch=0, channel=0, max_side=384, rgb_mode=1, mode="singl
 
     if obj is None:
         return fail("value is None", "none")
+
+    cloud_flag = int(cloud_mode or 0)
+    if cloud_flag == 1 or (cloud_flag != 2 and _cloud_candidate(obj, cloud_flag)):
+        return _autosurg_cloud(obj, int(batch), mode_name, cloud_flag)
 
     try:
         import numpy as np
@@ -621,6 +625,8 @@ def _describe(obj):
     visual = bool(
         is_torch
         or is_pil
+        or _is_open3d_cloud(obj)
+        or _is_trimesh_cloud(obj)
         or type_name in ("ndarray", "memmap", "matrix", "Array", "EagerTensor", "UMat")
         or (shape is not None and hasattr(obj, "__array__") and len(shape) >= 1)
     )
@@ -799,3 +805,264 @@ def _stack_numpy(arr, layout, batch, max_channels):
     if layout == "HW":
         return np.asarray(arr)[None, ...], 1, 1
     raise ValueError("unsupported layout for grid")
+
+
+# ---------------------------------------------------------------------------
+# Point cloud support
+# ---------------------------------------------------------------------------
+
+CLOUD_MIN_POINTS = 16
+CLOUD_MAX_POINTS = 150000
+CLOUD_PREVIEW_POINTS = 2000
+CLOUD_INLINE_LIMIT = 35000
+
+
+def _is_open3d_cloud(obj):
+    type_name = type(obj).__name__
+    module_name = str(getattr(type(obj), "__module__", "") or "")
+    return (
+        type_name == "PointCloud"
+        and "open3d" in module_name
+        and hasattr(obj, "points")
+    )
+
+
+def _is_trimesh_cloud(obj):
+    if not hasattr(obj, "vertices"):
+        return False
+    module_name = str(getattr(type(obj), "__module__", "") or "")
+    return "trimesh" in module_name
+
+
+def _cloud_vertices_colors(obj):
+    """Duck-typed extraction for open3d / trimesh point clouds."""
+    import numpy as np
+
+    pts = np.asarray(getattr(obj, "points", None) if _is_open3d_cloud(obj) else obj.vertices)
+    rgb = None
+    colors = getattr(obj, "colors", None)
+    if colors is not None:
+        try:
+            colors = np.asarray(colors)
+            if colors.ndim == 2 and colors.shape[1] in (3, 4) and colors.shape[0] == pts.shape[0]:
+                rgb = colors[:, :3]
+        except Exception:
+            rgb = None
+    return pts, rgb
+
+
+def _cloud_candidate(obj, cloud_flag):
+    if _is_open3d_cloud(obj) or _is_trimesh_cloud(obj):
+        return True
+    shape = getattr(obj, "shape", None)
+    if shape is None:
+        return False
+    try:
+        dims = [int(x) for x in shape]
+    except Exception:
+        return False
+    if cloud_flag == 1:
+        # Manual force: also accept (3, N) transposed clouds and (B, N, C).
+        if len(dims) == 2:
+            return (
+                dims[1] in (2, 3, 4, 5, 6, 7) and dims[0] >= 4
+            ) or (
+                dims[0] in (2, 3, 4, 5, 6, 7) and dims[1] >= 4
+            )
+        if len(dims) == 3:
+            return dims[2] in (2, 3, 4, 5, 6, 7) and dims[1] >= 4
+        return False
+    # Auto heuristic: strict 2-D (N, C) with C in 3..7 and enough points.
+    return (
+        len(dims) == 2
+        and dims[1] in (3, 4, 5, 6, 7)
+        and dims[0] >= CLOUD_MIN_POINTS
+    )
+
+
+def _cloud_read(obj, batch, flatten_all=0):
+    """Return (points_2d, rgb_or_none, type_name, dtype, device) or raise."""
+    import numpy as np
+
+    type_name = type(obj).__name__
+    module_name = str(getattr(type(obj), "__module__", "") or "")
+    is_torch = hasattr(obj, "detach") and hasattr(obj, "cpu") and (
+        "torch" in module_name or type_name == "Tensor"
+    )
+    device = ""
+    rgb = None
+
+    if _is_open3d_cloud(obj) or _is_trimesh_cloud(obj):
+        pts, rgb = _cloud_vertices_colors(obj)
+        dtype = str(pts.dtype)
+        return pts, rgb, type_name, dtype, device
+
+    if is_torch:
+        device = str(getattr(obj, "device", ""))
+        tensor = obj.detach()
+        if tensor.ndim == 3:
+            if flatten_all and int(batch) <= 0:
+                tensor = tensor.reshape(-1, int(tensor.shape[-1]))
+            else:
+                tensor = tensor[_clamp(int(batch), int(tensor.shape[0]))]
+        if str(tensor.dtype) in ("torch.bfloat16", "torch.float16"):
+            tensor = tensor.float()
+        arr = tensor.contiguous().cpu().numpy()
+        dtype = str(obj.dtype).replace("torch.", "")
+    elif hasattr(obj, "numpy") and callable(obj.numpy) and "tensorflow" in module_name:
+        arr = np.asarray(obj.numpy())
+        dtype = str(arr.dtype)
+    else:
+        arr = np.asarray(obj)
+        dtype = str(arr.dtype)
+        if hasattr(obj, "device"):
+            device = str(getattr(obj, "device", ""))
+
+    if arr.dtype == object:
+        raise ValueError("unsupported object array for point cloud")
+    if arr.ndim == 3:
+        if flatten_all and int(batch) <= 0:
+            arr = arr.reshape(-1, int(arr.shape[-1]))
+        else:
+            arr = arr[_clamp(int(batch), int(arr.shape[0]))]
+    if arr.ndim != 2:
+        raise ValueError("point cloud needs shape (N, C) or (B, N, C), got %r" % (arr.shape,))
+    return arr, rgb, type_name, dtype, device
+
+
+def _autosurg_cloud(obj, batch, mode_name, cloud_flag):
+    import base64
+    import json
+    import zlib
+
+    import numpy as np
+
+    def fail(message):
+        return json.dumps({"ok": False, "error": message, "code": "cloud"})
+
+    try:
+        arr, rgb, type_name, dtype, device = _cloud_read(
+            obj, batch, 1 if int(cloud_flag) == 1 else 0
+        )
+    except Exception as exc:
+        return fail("point cloud extract failed: %s" % exc)
+
+    # Auto path only fires for (N, C); force path may need a transpose.
+    cols = int(arr.shape[1]) if arr.ndim == 2 else 0
+    rows = int(arr.shape[0]) if arr.ndim == 2 else 0
+    if cols not in (3, 4, 5, 6, 7):
+        if rows in (2, 3, 4, 5, 6, 7):
+            arr = arr.T
+            cols = int(arr.shape[1])
+        if cols == 2 and cloud_flag == 1:
+            # Forced (N, 2): treat as a planar cloud with z = 0.
+            arr = np.concatenate(
+                [arr, np.zeros((int(arr.shape[0]), 1), dtype=arr.dtype)], axis=1
+            )
+            cols = 3
+        if cols not in (3, 4, 5, 6, 7):
+            return fail(
+                "not a point cloud (expected (N, 2..7), got %r)" % (list(arr.shape),)
+            )
+
+    xyz = np.asarray(arr[:, :3], dtype=np.float64)
+    finite = np.isfinite(xyz).all(axis=1)
+    if rgb is not None:
+        rgb = np.asarray(rgb, dtype=np.float64)
+        finite &= np.isfinite(rgb).all(axis=1)
+    else:
+        rgb = None
+        if cols >= 6:
+            rgb = np.asarray(arr[:, 3:6], dtype=np.float64)
+    intensity = None
+    if rgb is None and cols in (4, 5, 7, 9):
+        intensity = np.asarray(arr[:, 3], dtype=np.float64)
+        finite &= np.isfinite(intensity)
+    xyz = xyz[finite]
+    if rgb is not None:
+        rgb = rgb[finite]
+    if intensity is not None:
+        intensity = intensity[finite]
+
+    total = int(xyz.shape[0])
+    if total < 1:
+        return fail("point cloud is empty (all coordinates non-finite)")
+
+    sampled = total
+    limit = CLOUD_PREVIEW_POINTS if mode_name == "preview" else CLOUD_MAX_POINTS
+    if total > limit:
+        # Random (seeded, stable) sampling: uniform-stride aliases badly on
+        # organized (row-ordered) clouds and shows stripe artefacts.
+        rng = np.random.RandomState(0x5EED)
+        idx = rng.choice(total, size=limit, replace=False)
+        xyz = xyz[idx]
+        if rgb is not None:
+            rgb = rgb[idx]
+        if intensity is not None:
+            intensity = intensity[idx]
+        sampled = limit
+
+    if rgb is not None and float(np.nanmax(rgb)) <= 1.0001:
+        rgb = rgb * 255.0
+    if rgb is not None:
+        rgb = np.clip(rgb, 0.0, 255.0)
+
+    count = int(xyz.shape[0])
+    k = 3
+    blocks = [np.ascontiguousarray(xyz, dtype=np.float32).tobytes()]
+    if rgb is not None:
+        blocks.append(
+            np.ascontiguousarray(rgb.reshape(-1), dtype=np.float32).tobytes()
+        )
+    if intensity is not None:
+        blocks.append(
+            np.ascontiguousarray(intensity, dtype=np.float32).tobytes()
+        )
+    blob = zlib.compress(b"".join(blocks), 6)
+
+    xyz_min = [float(x) for x in xyz.min(axis=0)]
+    xyz_max = [float(x) for x in xyz.max(axis=0)]
+    xyz_mean = [float(x) for x in xyz.mean(axis=0)]
+
+    payload = {
+        "ok": True,
+        "kind": "pointcloud",
+        "format": "cloud",
+        "typeName": type_name,
+        "shape": [total, cols],
+        "dtype": dtype,
+        "device": device,
+        "layout": "CLOUD",
+        "batchCount": 1,
+        "channelCount": 1,
+        "batchIndex": 0,
+        "channelIndex": 0,
+        "rgbMode": False,
+        "bgrGuess": False,
+        "isTorch": "torch" in str(getattr(type(obj), "__module__", "")),
+        "tensorH": 0,
+        "tensorW": 0,
+        "displayH": 0,
+        "displayW": 0,
+        "min": None,
+        "max": None,
+        "mean": None,
+        "nanCount": 0,
+        "infCount": 0,
+        "cloudCount": total,
+        "cloudSampled": sampled,
+        "cloudK": k,
+        "cloudRgb": rgb is not None,
+        "cloudIntensity": intensity is not None,
+        "cloudMin": xyz_min,
+        "cloudMax": xyz_max,
+        "cloudMean": xyz_mean,
+        "pixelChannels": 1,
+    }
+    if len(blob) <= CLOUD_INLINE_LIMIT:
+        payload["pixels"] = base64.b64encode(blob).decode("ascii")
+        payload["pixelEncoding"] = "zlib"
+    else:
+        payload["token"] = _buf_set(blob)
+        payload["byteLength"] = len(blob)
+    return json.dumps(payload, allow_nan=False)

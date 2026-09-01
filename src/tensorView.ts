@@ -14,12 +14,13 @@ interface SliceOpts {
   token?: string;
   offset?: number;
   length?: number;
+  cloudMode?: number; // 0 auto, 1 force cloud, 2 force image
 }
 
 interface ExtractOk {
   ok: true;
-  kind: "image" | "heatmap" | "line" | "scalar";
-  format: "rgb" | "gray" | "line" | "scalar" | "grid";
+  kind: "image" | "heatmap" | "line" | "scalar" | "pointcloud";
+  format: "rgb" | "gray" | "line" | "scalar" | "grid" | "cloud";
   typeName: string;
   shape: number[];
   dtype: string;
@@ -57,6 +58,24 @@ interface ExtractOk {
   cellH?: number;
   shownChannels?: number;
   deadChannels?: number[];
+  cloudCount?: number;
+  cloudSampled?: number;
+  cloudK?: number;
+  cloudRgb?: boolean;
+  cloudIntensity?: boolean;
+  cloudMin?: number[];
+  cloudMax?: number[];
+  cloudMean?: number[];
+  cloud?: {
+    count: number;
+    sampled: number;
+    cols: number;
+    rgb: boolean;
+    intensity: boolean;
+    min: number[];
+    max: number[];
+    mean: number[];
+  };
 }
 
 interface ExtractErr {
@@ -137,6 +156,16 @@ export function registerTensorView(context: vscode.ExtensionContext): void {
         );
       },
     ),
+    vscode.commands.registerCommand(
+      "autosurg.viewCloud",
+      (arg?: unknown) => {
+        void openTensorView(context, arg, true).catch((error) =>
+          vscode.window.showErrorMessage(
+            `AutoSurg point cloud failed: ${String(error)}`,
+          ),
+        );
+      },
+    ),
     vscode.debug.onDidChangeActiveStackItem(() => {
       for (const view of views) {
         view.onStackChanged();
@@ -159,6 +188,7 @@ export function registerTensorView(context: vscode.ExtensionContext): void {
 async function openTensorView(
   context: vscode.ExtensionContext,
   arg: unknown,
+  forceCloud = false,
 ): Promise<void> {
   const session = resolveSession(arg);
   if (!session) {
@@ -176,7 +206,11 @@ async function openTensorView(
   for (const view of views) {
     if (view.key === key) {
       view.reveal();
-      await view.refresh();
+      if (forceCloud) {
+        view.forceCloudMode();
+      } else {
+        await view.refresh();
+      }
       return;
     }
   }
@@ -188,6 +222,7 @@ async function openTensorView(
     mode: "single",
     maxChannels: 64,
     cellSide: 48,
+    cloudMode: forceCloud ? 1 : 0,
   });
   views.add(view);
   await view.refresh();
@@ -406,7 +441,25 @@ function buildHover(
   if (thumb) {
     md.appendMarkdown(`<img src="data:image/png;base64,${thumb}" width="160" />\n\n`);
   }
-  if (peek && (peek.min !== undefined || peek.max !== undefined)) {
+  if (peek && peek.format === "cloud") {
+    const count = peek.cloudCount;
+    const min = peek.cloudMin;
+    const max = peek.cloudMax;
+    const bits: string[] = [];
+    if (count !== undefined) {
+      bits.push(`${count} points`);
+    }
+    if (min && max) {
+      bits.push(
+        `bbox (${formatHoverNumber(min[0])},${formatHoverNumber(min[1])},${formatHoverNumber(
+          min[2],
+        )}) → (${formatHoverNumber(max[0])},${formatHoverNumber(max[1])},${formatHoverNumber(max[2])})`,
+      );
+    }
+    if (bits.length) {
+      md.appendMarkdown(bits.join(" · ") + "\n\n");
+    }
+  } else if (peek && (peek.min !== undefined || peek.max !== undefined)) {
     md.appendMarkdown(
       `min ${formatHoverNumber(peek.min)} · max ${formatHoverNumber(peek.max)} · mean ${formatHoverNumber(peek.mean)}\n\n`,
     );
@@ -497,6 +550,12 @@ class TensorViewPanel {
 
   reveal(): void {
     this.panel.reveal(vscode.ViewColumn.Beside, true);
+  }
+
+  forceCloudMode(): void {
+    this.slice.cloudMode = 1;
+    this.slice.mode = "single";
+    void this.refresh({ quiet: true });
   }
 
   onStackChanged(): void {
@@ -594,9 +653,17 @@ class TensorViewPanel {
     enabled?: boolean;
     x?: number;
     y?: number;
+    view?: string;
   }): Promise<void> {
     if (message.type === "ready" || message.type === "refresh") {
       await this.refresh();
+      return;
+    }
+    if (message.type === "viewAs") {
+      const mode = String(message.view || "auto");
+      this.slice.cloudMode = mode === "cloud" ? 1 : mode === "image" ? 2 : 0;
+      this.slice.mode = "single";
+      await this.refresh({ quiet: true });
       return;
     }
     if (message.type === "autoWatch") {
@@ -695,6 +762,18 @@ class TensorViewPanel {
 
 function preparePayload(result: ExtractOk, expression: string): ExtractOk {
   const data: ExtractOk = { ...result, expression };
+  if (data.format === "cloud" && data.cloudCount !== undefined) {
+    data.cloud = {
+      count: data.cloudCount || 0,
+      sampled: data.cloudSampled || data.cloudCount || 0,
+      cols: data.cloudK || 3,
+      rgb: !!data.cloudRgb,
+      intensity: !!data.cloudIntensity,
+      min: data.cloudMin || [0, 0, 0],
+      max: data.cloudMax || [0, 0, 0],
+      mean: data.cloudMean || [0, 0, 0],
+    };
+  }
   if (!data.pixels) {
     return data;
   }
@@ -777,7 +856,7 @@ function callExtractor(
       opts.rgbMode ? 1 : 0
     }, ${JSON.stringify(opts.mode)}, ${opts.maxChannels}, ${opts.cellSide}, ${JSON.stringify(
       opts.token || "",
-    )}, ${opts.offset || 0}, ${opts.length || 12000})))` +
+    )}, ${opts.offset || 0}, ${opts.length || 12000}, ${opts.cloudMode || 0})))` +
     `({'__builtins__': __import__('builtins')}, ${objectExpr})`
   );
 }
@@ -1270,7 +1349,7 @@ function titleFor(expression: string): string {
   return compact.length > 40 ? `Tensor: ${compact.slice(0, 37)}…` : `Tensor: ${compact}`;
 }
 
-function renderHtml(webview: vscode.Webview, scriptUri: vscode.Uri): string {
+export function renderHtml(webview: vscode.Webview, scriptUri: vscode.Uri): string {
   const nonce = Array.from({ length: 16 }, () =>
     Math.floor(Math.random() * 36).toString(36),
   ).join("");
@@ -1309,7 +1388,8 @@ function renderHtml(webview: vscode.Webview, scriptUri: vscode.Uri): string {
     label { display: flex; gap: 6px; align-items: center; color: var(--muted); }
     input[type=range] { width: 120px; }
     #stage { position: relative; flex: 1; overflow: hidden; cursor: grab; background: #111; }
-    #cv { position: absolute; inset: 0; }
+    #cv, #glcv { position: absolute; inset: 0; }
+    #glcv[hidden], #cv[hidden] { display: none; }
     #overlay {
       position: absolute; inset: 0; display: grid; place-items: center;
       background: color-mix(in srgb, var(--bg) 72%, transparent); padding: 24px; text-align: center;
@@ -1363,6 +1443,32 @@ function renderHtml(webview: vscode.Webview, scriptUri: vscode.Uri): string {
           <option value="gray">Grayscale</option>
         </select>
       </label>
+      <label id="viewAsWrap" hidden>View
+        <select id="viewAs">
+          <option value="auto" selected>Auto</option>
+          <option value="image">Image</option>
+          <option value="cloud">Point Cloud</option>
+        </select>
+      </label>
+      <span id="cloudWrap" hidden>
+        <label>Size <input type="range" id="ptSize" min="1" max="10" value="2"> <span id="ptSizeVal">2</span>px</label>
+        <label>Color
+          <select id="cloudColor">
+            <option value="auto" selected>Auto</option>
+            <option value="gray">Gray</option>
+            <option value="cmap">Intensity</option>
+            <option value="rgb">RGB</option>
+            <option value="height">Height</option>
+          </select>
+        </label>
+        <label>Up
+          <select id="upAxis">
+            <option value="2" selected>Z</option>
+            <option value="1">Y</option>
+            <option value="0">X</option>
+          </select>
+        </label>
+      </span>
       <label>Diff
         <select id="diffMode">
           <option value="off">Off</option>
@@ -1374,6 +1480,7 @@ function renderHtml(webview: vscode.Webview, scriptUri: vscode.Uri): string {
     <div class="workspace">
     <div id="stage">
       <canvas id="cv"></canvas>
+      <canvas id="glcv" hidden></canvas>
       <div id="overlay">Pause the debugger, then right-click a tensor or Mat.</div>
       <div id="tip" hidden></div>
     </div>
