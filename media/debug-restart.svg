@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+  <!-- Restart-attach: circular arrows around a debug bug. Amber vs hot green. -->
+  <g fill="none" stroke="#e3b341" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12.7 6.2A5 5 0 0 0 3.4 7.4"/>
+    <path d="M3.3 9.8A5 5 0 0 0 12.6 8.6"/>
+    <path d="M12.7 6.2l1.5-2M12.7 6.2l-2.1-.2"/>
+    <path d="M3.3 9.8l-1.5 2M3.3 9.8l2.1.2"/>
+  </g>
+  <g fill="#e3b341">
+    <path d="M6.15 6.05h3.7v1.15H9.2v.7h.95v2.05H8.85v.85H7.15v-.85H6.15V7.9h.95v-.7H6.15z"/>
+  </g>
+</svg>

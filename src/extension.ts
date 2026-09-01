@@ -41,6 +41,8 @@ interface ControlOptions {
   force?: boolean;
   env?: Record<string, string>;
   timeoutMs?: number;
+  debugPort?: number;
+  debugHost?: string;
 }
 
 type NodeKind = "category" | "module" | "compute" | "orchestrator";
@@ -197,13 +199,13 @@ class AutoSurgTreeProvider implements vscode.TreeDataProvider<AutoSurgNode> {
     ];
   }
 
-  async pickDebuggable(): Promise<AutoSurgNode | undefined> {
+  async pickDebuggable(
+    kinds?: NodeKind[],
+  ): Promise<AutoSurgNode | undefined> {
+    const allowed = kinds ?? ["compute", "orchestrator"];
     const candidates = this.getChildren()
       .flatMap((category) => category.children)
-      .filter(
-        (node) =>
-          node.nodeKind === "compute" || node.nodeKind === "orchestrator",
-      );
+      .filter((node) => allowed.includes(node.nodeKind));
     const selected = await vscode.window.showQuickPick(
       candidates.map((node) => ({
         label: node.name,
@@ -301,6 +303,12 @@ class ControlClient {
     }
     if (options?.force) {
       args.push("--force");
+    }
+    if (options?.debugPort !== undefined) {
+      args.push("--debug-port", String(options.debugPort));
+    }
+    if (options?.debugHost) {
+      args.push("--debug-host", options.debugHost);
     }
     for (const [key, value] of Object.entries(options?.env ?? {})) {
       args.push("--env", `${key}=${value}`);
@@ -425,17 +433,39 @@ function addSemanticDiagnostics(
   }
 }
 
+type ComputeDebugMode = "hot" | "restart";
+
 const activeDebugStarts = new Set<string>();
 const reservedDebugPorts = new Set<number>();
 const activeDebugSessionNames = new Set<string>();
+
+const ORCHESTRATOR_ATTACH_PREFIX = "AutoSurg: orchestrator (";
+
+function isMainProcessDebugSession(name: string): boolean {
+  return (
+    name === "AutoSurg: Full System" ||
+    name.startsWith(ORCHESTRATOR_ATTACH_PREFIX)
+  );
+}
+
+function isMainProcessAttached(): boolean {
+  return [...activeDebugSessionNames].some(isMainProcessDebugSession);
+}
 
 async function debugNode(
   node: AutoSurgNode | undefined,
   provider: AutoSurgTreeProvider,
   control: ControlClient,
   configPath: string,
+  mode: ComputeDebugMode | "orchestrator" = "orchestrator",
 ): Promise<void> {
-  const target = node ?? (await provider.pickDebuggable());
+  const kinds: NodeKind[] =
+    mode === "orchestrator"
+      ? ["orchestrator"]
+      : mode === "hot"
+        ? ["compute", "orchestrator"]
+        : ["compute"];
+  const target = node ?? (await provider.pickDebuggable(kinds));
   if (!target) {
     return;
   }
@@ -449,7 +479,7 @@ async function debugNode(
 
   activeDebugStarts.add(target.name);
   try {
-    await debugTarget(target, provider, control, configPath);
+    await debugTarget(target, provider, control, configPath, mode);
   } finally {
     activeDebugStarts.delete(target.name);
   }
@@ -460,11 +490,19 @@ async function debugTarget(
   provider: AutoSurgTreeProvider,
   control: ControlClient,
   configPath: string,
+  mode: ComputeDebugMode | "orchestrator",
 ): Promise<void> {
   if (target.nodeKind === "orchestrator") {
+    if (mode === "restart") {
+      throw new Error("Restart-Attach applies to Compute modules only.");
+    }
+    if (mode === "hot") {
+      await hotAttachTarget(target, provider, control);
+      return;
+    }
     if (provider.runtimeFor(target.name)?.running) {
       void vscode.window.showWarningMessage(
-        "The orchestrator is already running without a debugger. Stop the system before launching an orchestrator debug session.",
+        `${target.name} is already running. Use Hot-Attach to debug the live main.py process without restarting.`,
       );
       return;
     }
@@ -487,6 +525,91 @@ async function debugTarget(
     return;
   }
 
+  const alreadyAttached = [...activeDebugSessionNames].some((name) =>
+    name.startsWith(`AutoSurg: ${target.name} (`),
+  );
+  if (alreadyAttached) {
+    void vscode.window.showInformationMessage(
+      `${target.name} is already attached to a debugger.`,
+    );
+    return;
+  }
+
+  if (mode === "hot") {
+    await hotAttachTarget(target, provider, control);
+    return;
+  }
+  await restartAttachCompute(target, provider, control);
+}
+
+async function hotAttachTarget(
+  target: AutoSurgNode,
+  provider: AutoSurgTreeProvider,
+  control: ControlClient,
+): Promise<void> {
+  const isOrchestrator = target.nodeKind === "orchestrator";
+  if (isOrchestrator && isMainProcessAttached()) {
+    void vscode.window.showInformationMessage(
+      "The orchestrator process is already attached. All orchestrators share main.py, so breakpoints in any of them will hit this session.",
+    );
+    return;
+  }
+
+  const liveStatus = await control.request("status", target.name);
+  const isRunning =
+    liveStatus.alive === true || liveStatus.restarting === true;
+  if (!isRunning) {
+    throw new Error(
+      isOrchestrator
+        ? `${target.name} is not running. Start the system first, or use Debug Orchestrator to launch main.py.`
+        : `${target.name} is not running. Start it first, or use Restart-Attach.`,
+    );
+  }
+  if (liveStatus.restarting === true) {
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Waiting for ${target.name} to finish restarting`,
+        cancellable: false,
+      },
+      () => waitForModuleReady(control, target.name, 70_000),
+    );
+  }
+  const hot = await tryHotPlugDebug(control, target.name);
+  if (!hot) {
+    throw new Error(
+      isOrchestrator
+        ? `${target.name} hot-attach failed. ControlPlane may not support orchestrator start_debug yet, or port 5684 is in use.`
+        : `${target.name} hot-attach failed. The worker may not support start_debug yet, or the debug port is in use. Use Restart-Attach if you can drop process state.`,
+    );
+  }
+  if (hot.underDebugger) {
+    void vscode.window.showInformationMessage(
+      "main.py is already running under a debugger. Breakpoints in orchestrators will hit that session.",
+    );
+    return;
+  }
+  const sessionName = isOrchestrator ? "orchestrator" : target.name;
+  await attachComputeDebugger(sessionName, hot.host, hot.port);
+  const kept = isOrchestrator
+    ? "all orchestrators share this process"
+    : "process state kept";
+  void vscode.window.showInformationMessage(
+    hot.already
+      ? `AutoSurg attached to ${target.name} on ${hot.host}:${hot.port} (already listening).`
+      : `AutoSurg hot-attached to ${target.name} on ${hot.host}:${hot.port} (${kept}).`,
+  );
+  setTimeout(() => void provider.refresh(), 1000);
+}
+
+async function restartAttachCompute(
+  target: AutoSurgNode,
+  provider: AutoSurgTreeProvider,
+  control: ControlClient,
+): Promise<void> {
+  const liveStatus = await control.request("status", target.name);
+  const isRunning =
+    liveStatus.alive === true || liveStatus.restarting === true;
   const port = await findAvailablePort(
     vscode.workspace
       .getConfiguration("autosurg")
@@ -495,9 +618,6 @@ async function debugTarget(
   reservedDebugPorts.add(port);
 
   try {
-    const liveStatus = await control.request("status", target.name);
-    const isRunning =
-      liveStatus.alive === true || liveStatus.restarting === true;
     const action = isRunning ? "restart" : "start";
     const result = await control.request(action, target.name, {
       force: true,
@@ -519,19 +639,75 @@ async function debugTarget(
       () => waitForModuleReady(control, target.name, 70_000),
     );
 
-    const attached = await vscode.debug.startDebugging(undefined, {
-      name: `AutoSurg: ${target.name} (${port})`,
-      type: "debugpy",
-      request: "attach",
-      connect: { host: "localhost", port },
-      justMyCode: false,
-    });
-    if (!attached) {
-      throw new Error(`Unable to attach to ${target.name} on port ${port}`);
-    }
+    await attachComputeDebugger(target.name, "localhost", port);
+    void vscode.window.showInformationMessage(
+      `AutoSurg restart-attached ${target.name} on localhost:${port} (process was restarted).`,
+    );
     setTimeout(() => void provider.refresh(), 1000);
   } finally {
     reservedDebugPorts.delete(port);
+  }
+}
+
+interface HotPlugDebug {
+  host: string;
+  port: number;
+  already: boolean;
+  underDebugger?: boolean;
+}
+
+async function tryHotPlugDebug(
+  control: ControlClient,
+  module: string,
+): Promise<HotPlugDebug | undefined> {
+  try {
+    const result = await control.request("start_debug", module, {
+      timeoutMs: 15_000,
+    });
+    if (result.status === "error") {
+      return undefined;
+    }
+    if (result.under_debugger === true) {
+      return {
+        host: "localhost",
+        port: 0,
+        already: true,
+        underDebugger: true,
+      };
+    }
+    const port = Number(result.port);
+    if (!Number.isInteger(port) || port <= 0) {
+      return undefined;
+    }
+    const host =
+      typeof result.host === "string" && result.host.trim()
+        ? result.host
+        : "localhost";
+    return {
+      host,
+      port,
+      already: result.already === true,
+    };
+  } catch {
+    // Old ControlPlane, argparse without start_debug, or listen failure.
+    return undefined;
+  }
+}
+
+async function attachComputeDebugger(
+  name: string,
+  host: string,
+  port: number,
+): Promise<void> {
+  const attached = await vscode.debug.startDebugging(undefined, {
+    name: `AutoSurg: ${name} (${port})`,
+    type: "debugpy",
+    request: "attach",
+    connect: { host, port },
+    justMyCode: false,
+  });
+  if (!attached) {
+    throw new Error(`Unable to attach to ${name} on ${host}:${port}`);
   }
 }
 
@@ -563,7 +739,9 @@ async function debugAllComputes(
       continue;
     }
     try {
-      await debugNode(compute, provider, control, configPath);
+      const mode: ComputeDebugMode =
+        compute.runtime?.running === true ? "hot" : "restart";
+      await debugNode(compute, provider, control, configPath, mode);
       attached += 1;
     } catch (error) {
       failures.push(`${compute.name}: ${String(error)}`);
@@ -832,9 +1010,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       diagnostics.validate(true),
     ),
     vscode.commands.registerCommand("autosurg.debug", (node?: AutoSurgNode) =>
-      debugNode(node, provider, control, configPath).catch((error) =>
-        vscode.window.showErrorMessage(`AutoSurg debug failed: ${String(error)}`),
+      debugNode(node, provider, control, configPath, "orchestrator").catch(
+        (error) =>
+          vscode.window.showErrorMessage(
+            `AutoSurg debug failed: ${String(error)}`,
+          ),
       ),
+    ),
+    vscode.commands.registerCommand("autosurg.debugHot", (node?: AutoSurgNode) =>
+      debugNode(node, provider, control, configPath, "hot").catch((error) =>
+        vscode.window.showErrorMessage(
+          `AutoSurg hot-attach failed: ${String(error)}`,
+        ),
+      ),
+    ),
+    vscode.commands.registerCommand(
+      "autosurg.debugRestart",
+      (node?: AutoSurgNode) =>
+        debugNode(node, provider, control, configPath, "restart").catch(
+          (error) =>
+            vscode.window.showErrorMessage(
+              `AutoSurg restart-attach failed: ${String(error)}`,
+            ),
+        ),
     ),
     vscode.commands.registerCommand("autosurg.debugAllComputes", () =>
       debugAllComputes(provider, control, configPath).catch((error) =>

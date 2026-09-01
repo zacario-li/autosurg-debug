@@ -8,15 +8,16 @@ AutoSurg Debug 是用于管理和调试 AutoSurg Compute 模块及 Orchestrator 
 - 在侧边栏显示 Compute、Orchestrator 和基础设施模块
 - 显示模块运行状态和 Compute replica 数量
 - 启动、停止和重启模块
-- 一键调试 Compute 模块
+- 绿色 **Hot-Attach**：对已运行 Compute 或 Orchestrator 热插 debugpy，保留进程状态
+- 橙色 **Restart-Attach**：重启 Compute 再附加（会清空 init 状态）
 - 一次附加所有已启用的 Compute 模块
 - 一键调试完整系统，包括主进程中的 Orchestrator 和所有 Compute
-- 一键启动 Orchestrator 调试会话
+- 一键启动 Orchestrator 调试会话（系统未运行时 launch `main.py`）
 - 自动分配空闲的 debugpy 端口
 - 检查 YAML 语法、重复键、依赖引用和 path preset
 - 调试暂停时右键查看 Tensor / Mat 图像，支持切片、伪彩色和像素探针
 
-调试端口由插件临时分配并通过 ControlPlane 传递，不需要在 `modules.yaml` 中配置 `AUTOSURG_DEBUG_PORT`。
+调试端口优先通过 ControlPlane `start_debug` 热插到已运行的 worker 或 `main.py` 主进程，不需要在 `modules.yaml` 中配置 `AUTOSURG_DEBUG_PORT`。侧边栏 Compute 行有两个调试按钮：绿色插头为 Hot-Attach，橙色循环箭头为 Restart-Attach。Orchestrator 行同样有绿色 Hot-Attach；所有 Orchestrator 共享 `main.py` 进程，因此只会产生一个主进程调试会话。
 
 ## 安装
 
@@ -31,7 +32,7 @@ AutoSurg Debug 是用于管理和调试 AutoSurg Compute 模块及 Orchestrator 
 ## 使用前提
 
 - 工作区中包含 `system/config/modules.yaml`，或者已经配置 `autosurg.configPath`
-- AutoSurg 使用包含临时调试环境支持的新版 ControlPlane
+- AutoSurg 使用包含 `start_debug` 热插的新版 ControlPlane
 - `autosurg.controlPython` 指向安装了 `pyzmq` 的 Python
 - 目标 Compute 环境能够导入 `debugpy`；缺少时 worker 会尝试自动安装
 - VS Code/Cursor 已安装 Python 调试扩展
@@ -48,11 +49,11 @@ AutoSurg Debug 是用于管理和调试 AutoSurg Compute 模块及 Orchestrator 
 
 3. 打开左侧 AutoSurg 视图。
 4. 找到目标 Compute，例如 `stereo`。
-5. 点击模块右侧的调试图标，或者右键选择 `AutoSurg: Debug Module`。
+5. 模块行右侧有两个调试按钮：
+   - **绿色插头**：Hot-Attach，插入当前进程，不重启、不丢状态。模块必须已在运行。
+   - **橙色循环箭头**：Restart-Attach，带 debug 环境重启后再附加，进程内状态会清空。
 
-插件会实时查询模块状态、分配空闲端口、使用临时调试环境重启模块、等待模块恢复 ready，然后附加调试器。
-
-Compute 调试会重启目标 worker，其进程内状态会被清空。对于 Stereo 等有状态模块，后续业务请求需要重新执行初始化流程。
+也可右键选择 `AutoSurg: Hot-Attach Compute` / `AutoSurg: Restart-Attach Compute`。
 
 ## 调试全部 Compute
 
@@ -60,7 +61,7 @@ Compute 调试会重启目标 worker，其进程内状态会被清空。对于 S
 
 `AutoSurg: Debug All Compute Modules`
 
-插件会依次重启并附加所有已启用的 Compute。每个 Compute 使用独立调试端口和独立调用栈。
+插件会依次热插并附加所有已启用的 Compute。每个 Compute 使用独立调试端口和独立调用栈。未运行的模块仍会按原路径拉起。
 
 ## 调试完整系统
 
@@ -72,19 +73,29 @@ Compute 调试会重启目标 worker，其进程内状态会被清空。对于 S
    `AutoSurg: Debug Full System`
 
 3. 插件以 Debug 模式启动 `main.py`。
-4. ControlPlane 就绪后，插件依次重启并附加每个 Compute。
+4. ControlPlane 就绪后，插件依次热插并附加每个 Compute（无需为调试再重启一遍）。
 
-断点暂停某个 Compute 时，该模块无法处理 RPC 请求，依赖它的业务调用可能发生超时。调试 GPU 模块时，批量重启和初始化也可能需要较长时间。
+断点暂停某个 Compute 时，该模块无法处理 RPC 请求，依赖它的业务调用可能发生超时。调试 GPU 模块时，首次加载模型仍可能需要较长时间。
 
 ## 调试 Orchestrator
 
-Orchestrator 与 Supervisor 运行在 `main.py` 进程中，不能像 Compute 一样独立重启并附加。
+Orchestrator 与 Supervisor 运行在同一个 `main.py` 进程中。对任意一个 Orchestrator 做 Hot-Attach，都会在该进程内 `debugpy.listen()`（约定端口 5684），然后附加调试器；其余 Orchestrator 的断点也会命中同一会话。
 
-1. 停止命令行中已经运行的 `main.py`。
-2. 在 Orchestrator 代码中设置断点。
-3. 在 AutoSurg 视图中点击目标 Orchestrator 的调试按钮。
+1. 在命令行正常启动 AutoSurg：
 
-插件会以 Debug 模式启动 `main.py`。
+   ```bash
+   cd system
+   python3 main.py
+   ```
+
+2. 在目标 Orchestrator 代码中设置断点。
+3. 打开左侧 AutoSurg 视图，找到目标 Orchestrator，点击绿色 **Hot-Attach**。
+
+也可右键选择 `AutoSurg: Hot-Attach`。重复点击其它 Orchestrator 不会再开第二条会话。
+
+系统尚未运行时，仍可用原来的 `AutoSurg: Debug Orchestrator` 以 Debug 模式启动 `main.py`。若主进程已经在 F5 / Full System 会话下，插件会复用该会话，不再二次 attach。
+
+断点暂停时会卡住整个主进程（所有 Orchestrator、Gateway、ControlPlane），依赖它们的业务调用可能超时。
 
 ## 调试时查看 Tensor / Mat
 
@@ -131,7 +142,11 @@ Orchestrator 与 Supervisor 运行在 `main.py` 进程中，不能像 Compute �
 
 ### 调试后业务请求超时
 
-等待插件完成模块 ready 检查并成功附加调试器后再发送请求。同时确认程序没有停在断点上；停在断点期间，该 Compute 的 RPC 请求会等待并可能触发客户端超时。
+热插成功后即可发业务请求。若程序停在断点上，该 Compute 的 RPC 会等待并可能触发客户端超时。
+
+### 热插失败、模块被重启了
+
+旧版 ControlPlane 没有 `start_debug`、worker 尚未加载新代码、或约定 debug 端口被占用时，插件会回退到重启路径。确认已重启带 `start_debug` 的 `main.py`，并检查端口 5678–5683 是否空闲。
 
 ## 作者
 

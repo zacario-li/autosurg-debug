@@ -2,7 +2,7 @@
   "name": "autosurg-debug",
   "displayName": "AutoSurg Debug",
   "description": "Configure, control, and debug AutoSurg modules from VS Code.",
-  "version": "0.2.12",
+  "version": "0.2.15",
   "publisher": "autosurg",
   "icon": "media/icon.png",
   "author": {
@@ -56,8 +56,24 @@
       },
       {
         "command": "autosurg.debug",
-        "title": "AutoSurg: Debug Module",
+        "title": "AutoSurg: Debug Orchestrator",
         "icon": "$(debug-alt)"
+      },
+        {
+          "command": "autosurg.debugHot",
+          "title": "AutoSurg: Hot-Attach",
+          "icon": {
+            "light": "media/debug-hot.svg",
+            "dark": "media/debug-hot.svg"
+          }
+        },
+      {
+        "command": "autosurg.debugRestart",
+        "title": "AutoSurg: Restart-Attach Compute",
+        "icon": {
+          "light": "media/debug-restart.svg",
+          "dark": "media/debug-restart.svg"
+        }
       },
       {
         "command": "autosurg.debugAllComputes",
@@ -138,9 +154,34 @@
       ],
       "view/item/context": [
         {
-          "command": "autosurg.debug",
+          "command": "autosurg.debugHot",
           "when": "view == autosurg.modules && viewItem =~ /autosurg\\.(compute|orchestrator)/",
+          "group": "inline@1"
+        },
+        {
+          "command": "autosurg.debugRestart",
+          "when": "view == autosurg.modules && viewItem =~ /autosurg\\.compute/",
+          "group": "inline@2"
+        },
+        {
+          "command": "autosurg.debug",
+          "when": "view == autosurg.modules && viewItem =~ /autosurg\\.orchestrator/",
           "group": "inline"
+        },
+        {
+          "command": "autosurg.debugHot",
+          "when": "view == autosurg.modules && viewItem =~ /autosurg\\.(compute|orchestrator)/",
+          "group": "autosurgDebug@1"
+        },
+        {
+          "command": "autosurg.debugRestart",
+          "when": "view == autosurg.modules && viewItem =~ /autosurg\\.compute/",
+          "group": "autosurgDebug@2"
+        },
+        {
+          "command": "autosurg.debug",
+          "when": "view == autosurg.modules && viewItem =~ /autosurg\\.orchestrator/",
+          "group": "autosurgDebug@1"
         },
         {
           "command": "autosurg.start",
@@ -203,7 +244,7 @@
           "default": 5678,
           "minimum": 1024,
           "maximum": 65535,
-          "description": "First port considered for temporary compute debugging."
+          "description": "First port considered for temporary compute debugging. Orchestrator hot-attach uses conventional port 5684."
         },
         "autosurg.tensorHover": {
           "type": "boolean",
