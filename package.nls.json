@@ -1,0 +1,23 @@
+{
+  "displayName": "AutoSurg Debug",
+  "description": "Configure, control, and debug AutoSurg modules from VS Code.",
+  "command.refresh": "AutoSurg: Refresh",
+  "command.validate": "AutoSurg: Validate Configuration",
+  "command.debug": "AutoSurg: Debug Orchestrator",
+  "command.debugHot": "AutoSurg: Hot-Attach",
+  "command.debugRestart": "AutoSurg: Restart-Attach Compute",
+  "command.debugAllComputes": "AutoSurg: Debug All Compute Modules",
+  "command.debugFullSystem": "AutoSurg: Debug Full System",
+  "command.start": "AutoSurg: Start Module",
+  "command.stop": "AutoSurg: Stop Module",
+  "command.restart": "AutoSurg: Restart Module",
+  "command.visualizeTensor": "View as Image / Tensor",
+  "viewContainers.autosurg": "AutoSurg",
+  "views.modules": "Modules",
+  "config.title": "AutoSurg",
+  "config.configPath": "Path to modules.yaml, relative to the workspace root when not absolute.",
+  "config.controlHost": "ControlPlane host.",
+  "config.controlPython": "Python executable used for the ControlPlane client.",
+  "config.debugPortBase": "First port considered for temporary compute debugging. Orchestrator hot-attach uses conventional port 5684.",
+  "config.tensorHover": "Show a tensor/image thumbnail when hovering a Python variable while the debugger is paused."
+}

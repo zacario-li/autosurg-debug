@@ -1,8 +1,8 @@
 {
   "name": "autosurg-debug",
-  "displayName": "AutoSurg Debug",
-  "description": "Configure, control, and debug AutoSurg modules from VS Code.",
-  "version": "0.2.15",
+  "displayName": "%displayName%",
+  "description": "%description%",
+  "version": "0.2.16",
   "publisher": "autosurg",
   "icon": "media/icon.png",
   "author": {
@@ -22,7 +22,10 @@
     "dist",
     "media",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "README.zh-cn.md",
+    "package.nls.json",
+    "package.nls.zh-cn.json"
   ],
   "engines": {
     "vscode": "^1.90.0"
@@ -46,22 +49,22 @@
     "commands": [
       {
         "command": "autosurg.refresh",
-        "title": "AutoSurg: Refresh",
+        "title": "%command.refresh%",
         "icon": "$(refresh)"
       },
       {
         "command": "autosurg.validate",
-        "title": "AutoSurg: Validate Configuration",
+        "title": "%command.validate%",
         "icon": "$(check)"
       },
       {
         "command": "autosurg.debug",
-        "title": "AutoSurg: Debug Orchestrator",
+        "title": "%command.debug%",
         "icon": "$(debug-alt)"
       },
         {
           "command": "autosurg.debugHot",
-          "title": "AutoSurg: Hot-Attach",
+          "title": "%command.debugHot%",
           "icon": {
             "light": "media/debug-hot.svg",
             "dark": "media/debug-hot.svg"
@@ -69,7 +72,7 @@
         },
       {
         "command": "autosurg.debugRestart",
-        "title": "AutoSurg: Restart-Attach Compute",
+        "title": "%command.debugRestart%",
         "icon": {
           "light": "media/debug-restart.svg",
           "dark": "media/debug-restart.svg"
@@ -77,29 +80,29 @@
       },
       {
         "command": "autosurg.debugAllComputes",
-        "title": "AutoSurg: Debug All Compute Modules",
+        "title": "%command.debugAllComputes%",
         "icon": "$(server-process)"
       },
       {
         "command": "autosurg.debugFullSystem",
-        "title": "AutoSurg: Debug Full System",
+        "title": "%command.debugFullSystem%",
         "icon": "$(debug-all)"
       },
       {
         "command": "autosurg.start",
-        "title": "AutoSurg: Start Module"
+        "title": "%command.start%"
       },
       {
         "command": "autosurg.stop",
-        "title": "AutoSurg: Stop Module"
+        "title": "%command.stop%"
       },
       {
         "command": "autosurg.restart",
-        "title": "AutoSurg: Restart Module"
+        "title": "%command.restart%"
       },
       {
         "command": "autosurg.visualizeTensor",
-        "title": "View as Image / Tensor",
+        "title": "%command.visualizeTensor%",
         "category": "AutoSurg",
         "icon": "$(file-media)"
       }
@@ -116,7 +119,7 @@
       "activitybar": [
         {
           "id": "autosurg",
-          "title": "AutoSurg",
+          "title": "%viewContainers.autosurg%",
           "icon": "media/autosurg.svg"
         }
       ]
@@ -125,7 +128,7 @@
       "autosurg": [
         {
           "id": "autosurg.modules",
-          "name": "Modules"
+          "name": "%views.modules%"
         }
       ]
     },
@@ -222,34 +225,34 @@
       ]
     },
     "configuration": {
-      "title": "AutoSurg",
+      "title": "%config.title%",
       "properties": {
         "autosurg.configPath": {
           "type": "string",
           "default": "",
-          "description": "Path to modules.yaml, relative to the workspace root when not absolute."
+          "description": "%config.configPath%"
         },
         "autosurg.controlHost": {
           "type": "string",
           "default": "localhost",
-          "description": "ControlPlane host."
+          "description": "%config.controlHost%"
         },
         "autosurg.controlPython": {
           "type": "string",
           "default": "python3",
-          "description": "Python executable used for the ControlPlane client."
+          "description": "%config.controlPython%"
         },
         "autosurg.debugPortBase": {
           "type": "number",
           "default": 5678,
           "minimum": 1024,
           "maximum": 65535,
-          "description": "First port considered for temporary compute debugging. Orchestrator hot-attach uses conventional port 5684."
+          "description": "%config.debugPortBase%"
         },
         "autosurg.tensorHover": {
           "type": "boolean",
           "default": true,
-          "description": "Show a tensor/image thumbnail when hovering a Python variable while the debugger is paused."
+          "description": "%config.tensorHover%"
         }
       }
     }

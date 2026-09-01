@@ -1,158 +1,160 @@
 # AutoSurg Debug
 
-AutoSurg Debug 是用于管理和调试 AutoSurg Compute 模块及 Orchestrator 的 VS Code/Cursor 插件。
+**English** | [简体中文](README.zh-cn.md)
 
-## 功能
+AutoSurg Debug is a VS Code / Cursor extension for managing and debugging AutoSurg Compute modules and the Orchestrator.
 
-- 从 `system/config/modules.yaml` 读取模块清单
-- 在侧边栏显示 Compute、Orchestrator 和基础设施模块
-- 显示模块运行状态和 Compute replica 数量
-- 启动、停止和重启模块
-- 绿色 **Hot-Attach**：对已运行 Compute 或 Orchestrator 热插 debugpy，保留进程状态
-- 橙色 **Restart-Attach**：重启 Compute 再附加（会清空 init 状态）
-- 一次附加所有已启用的 Compute 模块
-- 一键调试完整系统，包括主进程中的 Orchestrator 和所有 Compute
-- 一键启动 Orchestrator 调试会话（系统未运行时 launch `main.py`）
-- 自动分配空闲的 debugpy 端口
-- 检查 YAML 语法、重复键、依赖引用和 path preset
-- 调试暂停时右键查看 Tensor / Mat 图像，支持切片、伪彩色和像素探针
+## Features
 
-调试端口优先通过 ControlPlane `start_debug` 热插到已运行的 worker 或 `main.py` 主进程，不需要在 `modules.yaml` 中配置 `AUTOSURG_DEBUG_PORT`。侧边栏 Compute 行有两个调试按钮：绿色插头为 Hot-Attach，橙色循环箭头为 Restart-Attach。Orchestrator 行同样有绿色 Hot-Attach；所有 Orchestrator 共享 `main.py` 进程，因此只会产生一个主进程调试会话。
+- Reads the module manifest from `system/config/modules.yaml`
+- Shows Compute, Orchestrator, and infrastructure modules in a sidebar view
+- Displays module runtime status and Compute replica counts
+- Start, stop, and restart modules
+- Green **Hot-Attach**: hot-inject debugpy into a running Compute or Orchestrator while keeping process state
+- Orange **Restart-Attach**: restart a Compute, then attach (clears init state)
+- Attach to all enabled Compute modules at once
+- One-click debugging of the full system: Orchestrator in the main process plus all Compute modules
+- One-click Orchestrator debug session (launches `main.py` when the system is not running)
+- Automatic allocation of free debugpy ports
+- Checks YAML syntax, duplicate keys, dependency references, and path presets
+- Right-click Tensor / Mat image inspection while paused at a breakpoint, with slicing, pseudo-color, and a pixel probe
 
-## 安装
+Debug ports are preferredly hot-injected into running workers or the `main.py` process via ControlPlane `start_debug`; no `AUTOSURG_DEBUG_PORT` configuration is needed in `modules.yaml`. Each Compute row in the sidebar has two debug buttons: the green plug is Hot-Attach, the orange cycle arrow is Restart-Attach. Orchestrator rows also have a green Hot-Attach; since all Orchestrators share the single `main.py` process, only one main-process debug session is created.
 
-在 VS Code 或 Cursor 中打开命令面板，执行：
+## Installation
+
+Open the Command Palette in VS Code or Cursor and run:
 
 `Extensions: Install from VSIX...`
 
-选择生成的 `autosurg-debug-*.vsix` 文件，安装完成后执行：
+Pick the generated `autosurg-debug-*.vsix` file, then run:
 
 `Developer: Reload Window`
 
-## 使用前提
+## Prerequisites
 
-- 工作区中包含 `system/config/modules.yaml`，或者已经配置 `autosurg.configPath`
-- AutoSurg 使用包含 `start_debug` 热插的新版 ControlPlane
-- `autosurg.controlPython` 指向安装了 `pyzmq` 的 Python
-- 目标 Compute 环境能够导入 `debugpy`；缺少时 worker 会尝试自动安装
-- VS Code/Cursor 已安装 Python 调试扩展
+- The workspace contains `system/config/modules.yaml`, or `autosurg.configPath` is configured
+- AutoSurg uses a recent ControlPlane that supports `start_debug` hot-attach
+- `autosurg.controlPython` points to a Python with `pyzmq` installed
+- `debugpy` is importable in the target Compute environment; the worker tries to install it automatically when missing
+- The Python debugging extension is installed in VS Code/Cursor
 
-## 调试 Compute
+## Debugging a Compute Module
 
-1. 在目标 Compute 代码中设置断点。
-2. 在命令行正常启动 AutoSurg：
+1. Set breakpoints in the target Compute code.
+2. Start AutoSurg normally from the command line:
 
    ```bash
    cd system
    python3 main.py
    ```
 
-3. 打开左侧 AutoSurg 视图。
-4. 找到目标 Compute，例如 `stereo`。
-5. 模块行右侧有两个调试按钮：
-   - **绿色插头**：Hot-Attach，插入当前进程，不重启、不丢状态。模块必须已在运行。
-   - **橙色循环箭头**：Restart-Attach，带 debug 环境重启后再附加，进程内状态会清空。
+3. Open the AutoSurg view on the left.
+4. Find the target Compute, e.g. `stereo`.
+5. Two debug buttons appear on the right side of the module row:
+   - **Green plug**: Hot-Attach, injects into the running process without restarting or losing state. The module must already be running.
+   - **Orange cycle arrow**: Restart-Attach, restarts the module with debug environment variables and then attaches; in-process state is cleared.
 
-也可右键选择 `AutoSurg: Hot-Attach Compute` / `AutoSurg: Restart-Attach Compute`。
+You can also right-click and choose `AutoSurg: Hot-Attach Compute` / `AutoSurg: Restart-Attach Compute`.
 
-## 调试全部 Compute
+## Debugging All Compute Modules
 
-保持命令行中的 `main.py` 正常运行，然后通过命令面板执行：
+Keep `main.py` running in the terminal, then run from the Command Palette:
 
 `AutoSurg: Debug All Compute Modules`
 
-插件会依次热插并附加所有已启用的 Compute。每个 Compute 使用独立调试端口和独立调用栈。未运行的模块仍会按原路径拉起。
+The extension hot-attaches and attaches to each enabled Compute in turn. Every Compute uses its own debug port and its own call stack. Modules that are not running are still launched via their original path.
 
-## 调试完整系统
+## Debugging the Full System
 
-完整系统调试同时覆盖 `main.py` 中的所有 Orchestrator 和全部已启用的 Compute。
+Full-system debugging covers all Orchestrators inside `main.py` plus every enabled Compute module.
 
-1. 停止命令行中已经运行的 `main.py`。
-2. 点击 AutoSurg 模块视图顶部的 Debug Full System 按钮，或者执行：
+1. Stop any `main.py` already running in the terminal.
+2. Click the Debug Full System button at the top of the AutoSurg module view, or run:
 
    `AutoSurg: Debug Full System`
 
-3. 插件以 Debug 模式启动 `main.py`。
-4. ControlPlane 就绪后，插件依次热插并附加每个 Compute（无需为调试再重启一遍）。
+3. The extension launches `main.py` in debug mode.
+4. Once ControlPlane is ready, the extension hot-attaches and attaches to each Compute in turn (no extra restarts for debugging).
 
-断点暂停某个 Compute 时，该模块无法处理 RPC 请求，依赖它的业务调用可能发生超时。调试 GPU 模块时，首次加载模型仍可能需要较长时间。
+While a breakpoint pauses a Compute, that module cannot serve RPC requests, and dependent business calls may time out. When debugging GPU modules, the initial model load may still take a while.
 
-## 调试 Orchestrator
+## Debugging an Orchestrator
 
-Orchestrator 与 Supervisor 运行在同一个 `main.py` 进程中。对任意一个 Orchestrator 做 Hot-Attach，都会在该进程内 `debugpy.listen()`（约定端口 5684），然后附加调试器；其余 Orchestrator 的断点也会命中同一会话。
+Orchestrators and the Supervisor run inside the same `main.py` process. Hot-Attaching to any Orchestrator calls `debugpy.listen()` inside that process (conventional port 5684) and then attaches the debugger; breakpoints in other Orchestrators hit the same session.
 
-1. 在命令行正常启动 AutoSurg：
+1. Start AutoSurg normally from the command line:
 
    ```bash
    cd system
    python3 main.py
    ```
 
-2. 在目标 Orchestrator 代码中设置断点。
-3. 打开左侧 AutoSurg 视图，找到目标 Orchestrator，点击绿色 **Hot-Attach**。
+2. Set breakpoints in the target Orchestrator code.
+3. Open the AutoSurg view on the left, find the target Orchestrator, and click the green **Hot-Attach**.
 
-也可右键选择 `AutoSurg: Hot-Attach`。重复点击其它 Orchestrator 不会再开第二条会话。
+You can also right-click and choose `AutoSurg: Hot-Attach`. Clicking other Orchestrators again will not open a second session.
 
-系统尚未运行时，仍可用原来的 `AutoSurg: Debug Orchestrator` 以 Debug 模式启动 `main.py`。若主进程已经在 F5 / Full System 会话下，插件会复用该会话，不再二次 attach。
+When the system is not running yet, you can still use `AutoSurg: Debug Orchestrator` to launch `main.py` in debug mode. If the main process is already under an F5 / Full System session, the extension reuses that session instead of attaching again.
 
-断点暂停时会卡住整个主进程（所有 Orchestrator、Gateway、ControlPlane），依赖它们的业务调用可能超时。
+A paused breakpoint freezes the entire main process (all Orchestrators, Gateway, ControlPlane), and dependent business calls may time out.
 
-## 调试时查看 Tensor / Mat
+## Viewing Tensors / Mats While Debugging
 
-在断点暂停后，可以用图形方式查看 `torch.Tensor`、`numpy.ndarray`、PIL Image、OpenCV 图像，以及 C++ `cv::Mat`。
+After a breakpoint pauses execution, you can visually inspect `torch.Tensor`, `numpy.ndarray`, PIL images, OpenCV images, and C++ `cv::Mat`.
 
-1. 在 Variables 或 Watch 窗口中右键变量，选择 `View as Image / Tensor`。
-2. 也可以在 Python 代码中选中表达式后按 `Ctrl+Alt+I`（macOS 为 `Cmd+Alt+I`）。
-3. 视图支持滚轮缩放、拖拽平移、Fit / 1:1、Batch/Channel 切片、伪彩色和 BGR/RGB 切换。
-4. 放大到 400% 以上会显示像素网格；鼠标悬停会显示坐标和原始数值。
-5. 默认开启 Auto：单步 F10 / F11 后，已打开的视图会自动刷新。
-6. 鼠标悬停在代码中的张量/图像变量上时，会显示迷你缩略图；点击 hover 里的链接可打开完整视图。
-7. 多通道张量可点击 `Grid` 平铺通道；点击某个缩略图进入该通道。
-8. `Snapshot` 保存当前画面，Diff 可选左右对比或残差热力图，也可与另一个表达式比较。
+1. Right-click a variable in the Variables or Watch pane and choose `View as Image / Tensor`.
+2. Or select an expression in Python code and press `Ctrl+Alt+I` (`Cmd+Alt+I` on macOS).
+3. The view supports wheel zoom, drag-to-pan, Fit / 1:1, Batch/Channel slicing, pseudo-color, and BGR/RGB toggle.
+4. A pixel grid appears above 400% zoom; hovering shows coordinates and raw values.
+5. Auto-refresh is on by default: opened views refresh automatically after F10 / F11 steps.
+6. Hovering a tensor/image variable in code shows a mini thumbnail; click the link in the hover to open the full view.
+7. Multi-channel tensors can be tiled via `Grid`; click a thumbnail to enter that channel.
+8. `Snapshot` saves the current frame; Diff supports side-by-side or residual heatmap, and can also compare against another expression.
 
-数据在调试进程内存中编码为 PNG，通过 DAP 传到 Webview，不会写临时文件。
+Data is encoded to PNG inside the debugged process memory and streamed to the webview over DAP—no temporary files are written.
 
-悬停缩略图可用设置 `autosurg.tensorHover` 关闭。
+Hover thumbnails can be disabled with the `autosurg.tensorHover` setting.
 
-## 配置检查
+## Validating Configuration
 
-点击 AutoSurg 模块视图顶部的检查按钮，或者执行：
+Click the validate button at the top of the AutoSurg module view, or run:
 
 `AutoSurg: Validate Configuration`
 
-检查结果会显示在编辑器 Problems 面板中。
+Results are shown in the editor's Problems pane.
 
-## 插件设置
+## Extension Settings
 
-- `autosurg.configPath`：`modules.yaml` 路径；相对路径以工作区根目录为基准
-- `autosurg.controlHost`：ControlPlane 地址，默认 `localhost`
-- `autosurg.controlPython`：运行 ControlPlane 客户端的 Python，默认 `python3`
-- `autosurg.debugPortBase`：自动寻找调试端口的起始值，默认 `5678`
-- `autosurg.tensorHover`：调试暂停时在代码悬停处显示张量缩略图，默认开启
+- `autosurg.configPath`: path to `modules.yaml`; relative paths resolve against the workspace root
+- `autosurg.controlHost`: ControlPlane address, defaults to `localhost`
+- `autosurg.controlPython`: Python used to run the ControlPlane client, defaults to `python3`
+- `autosurg.debugPortBase`: first port tried when auto-assigning debug ports, defaults to `5678`
+- `autosurg.tensorHover`: show tensor thumbnails on hover while the debugger is paused, on by default
 
-## 常见问题
+## Troubleshooting
 
-### 无法获取模块状态
+### Module status is unavailable
 
-确认 `main.py` 正在运行，并且 `autosurg.controlPython` 所指向的环境安装了 `pyzmq`。
+Make sure `main.py` is running and that the environment pointed to by `autosurg.controlPython` has `pyzmq` installed.
 
-### 调试时模块一直没有 ready
+### A module never becomes ready while debugging
 
-检查 `system/log/latest_log.log` 中目标 worker 的启动错误。常见原因包括 Python 环境错误、CUDA 库缺失或 debugpy 无法导入。
+Check `system/log/latest_log.log` for startup errors of the target worker. Common causes include a wrong Python environment, missing CUDA libraries, or `debugpy` failing to import.
 
-### 调试后业务请求超时
+### Business requests time out while debugging
 
-热插成功后即可发业务请求。若程序停在断点上，该 Compute 的 RPC 会等待并可能触发客户端超时。
+Business requests can be sent right after a successful hot-attach. If the program is stopped at a breakpoint, that Compute's RPC calls will wait and may trigger client-side timeouts.
 
-### 热插失败、模块被重启了
+### Hot-attach failed and the module was restarted
 
-旧版 ControlPlane 没有 `start_debug`、worker 尚未加载新代码、或约定 debug 端口被占用时，插件会回退到重启路径。确认已重启带 `start_debug` 的 `main.py`，并检查端口 5678–5683 是否空闲。
+When an old ControlPlane lacks `start_debug`, the worker has not loaded the new code, or the conventional debug port is occupied, the extension falls back to the restart path. Confirm that `main.py` with `start_debug` has been restarted, and check that ports 5678–5683 are free.
 
-## 作者
+## Author
 
 Zacario Li  
 <zacario.li@outlook.com>
 
-## 许可证
+## License
 
 MIT

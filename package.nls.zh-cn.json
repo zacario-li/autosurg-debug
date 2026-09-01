@@ -1,0 +1,23 @@
+{
+  "displayName": "AutoSurg Debug",
+  "description": "在 VS Code 中配置、控制和调试 AutoSurg 模块。",
+  "command.refresh": "AutoSurg: Refresh",
+  "command.validate": "AutoSurg: Validate Configuration",
+  "command.debug": "AutoSurg: Debug Orchestrator",
+  "command.debugHot": "AutoSurg: Hot-Attach",
+  "command.debugRestart": "AutoSurg: Restart-Attach Compute",
+  "command.debugAllComputes": "AutoSurg: Debug All Compute Modules",
+  "command.debugFullSystem": "AutoSurg: Debug Full System",
+  "command.start": "AutoSurg: Start Module",
+  "command.stop": "AutoSurg: Stop Module",
+  "command.restart": "AutoSurg: Restart Module",
+  "command.visualizeTensor": "以图像 / Tensor 查看",
+  "viewContainers.autosurg": "AutoSurg",
+  "views.modules": "模块",
+  "config.title": "AutoSurg",
+  "config.configPath": "modules.yaml 路径；非绝对路径时以工作区根目录为基准。",
+  "config.controlHost": "ControlPlane 地址。",
+  "config.controlPython": "运行 ControlPlane 客户端所用的 Python 解释器。",
+  "config.debugPortBase": "临时 Compute 调试时尝试的第一个端口。Orchestrator 热插使用约定端口 5684。",
+  "config.tensorHover": "调试器暂停时，悬停 Python 变量显示张量/图像缩略图。"
+}
