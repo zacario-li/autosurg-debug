@@ -105,6 +105,25 @@ A paused breakpoint freezes the entire main process (all Orchestrators, Gateway,
 
 ## Viewing Tensors / Mats While Debugging
 
+**Example — see the current camera frame and the live point cloud at one
+breakpoint:**
+
+![Tensor image and forced point cloud at a breakpoint](docs/view_img_ply.png)
+
+1. Attach the compute process (single-module debug or Multi-Attach) and pause
+   on the line of interest — in this screenshot `_handle_run_point_cloud`
+   just decoded the stereo frames and computed `point_cloud`.
+2. Image: click the eye icon on `left` / `right` in Variables (or hover, or
+   run *View Tensor…*). The panel shows the `(H, W, 3) uint8` frame with
+   RGB/BGR→RGB, batch/channel sliders and a zoom HUD; the header chip prints
+   `1880×1920×3 · uint8`.
+3. Point cloud: right-click `point_cloud` → *View as Point Cloud (force)* on
+   the second panel — the chip reports `PCL 2,073,600 pts` after
+   downsampling; adjust point size, colouring (intensity/viridis here), up
+   axis and rotation freely.
+4. The Stats card tracks dtype/shape/min/max/mean/NaN live; use *Snapshot* +
+   Compare to diff two frames of the same expression.
+
 After a breakpoint pauses execution, you can visually inspect `torch.Tensor`, `numpy.ndarray`, PIL images, OpenCV images, and C++ `cv::Mat`.
 
 1. Right-click a variable in the Variables or Watch pane and choose `View as Image / Tensor`.
