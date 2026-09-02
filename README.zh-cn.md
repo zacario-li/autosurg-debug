@@ -18,6 +18,9 @@ AutoSurg Debug 是用于管理和调试 AutoSurg Compute 模块及 Orchestrator 
 - 自动分配空闲的 debugpy 端口
 - 检查 YAML 语法、重复键、依赖引用和 path preset
 - 调试暂停时右键查看 Tensor / Mat 图像，支持切片、伪彩色和像素探针
+- 交互式 3D 点云查看器：`.ply` 文件、`(N, 2..7)` 张量与 Open3D / trimesh 点云，并提供强制点云命令
+- 实时 tail 系统日志流（`AutoSurg: Show System Log Stream`），支持回填、自动重连和 `rid=` 请求链串联
+- 监控总览面板：实时流/模块遥测 + 跨进程任意表达式监控列表（目标进程暂停时自动采集）
 - WebGL 3D 点云查看：自动识别 `(N, 3..7)` 张量、Open3D / trimesh 点云和 `.ply` 文件，支持轨道旋转、RGB / 强度 / 高度着色和逐点拾取
 
 调试端口优先通过 ControlPlane `start_debug` 热插到已运行的 worker 或 `main.py` 主进程，不需要在 `modules.yaml` 中配置 `AUTOSURG_DEBUG_PORT`。侧边栏 Compute 行有两个调试按钮：绿色插头为 Hot-Attach，橙色循环箭头为 Restart-Attach。Orchestrator 行同样有绿色 Hot-Attach；所有 Orchestrator 共享 `main.py` 进程，因此只会产生一个主进程调试会话。
@@ -128,6 +131,23 @@ Orchestrator 与 Supervisor 运行在同一个 `main.py` 进程中。对任意�
 5. 自动识别只是启发式。若变量被当成图像/热图打开但你确定它是点云，直接用查看器工具栏的 `View` 下拉（Auto / Image / Point Cloud）强制切换——强制模式还支持自动识别不会碰的 `(3, N)` 转置、`(B, N, C)` 批量和 `(N, 2)` 平面布局。
 
 超过 15 万点会均匀降采样后再传输，侧栏统计始终基于完整点云。PLY 支持 ASCII、binary_little_endian、binary_big_endian 三种格式，可带 `red/green/blue` 与 `intensity` 属性。
+
+## 监控面板
+
+`AutoSurg: Open Monitor Panel`（侧边栏标题栏的仪表盘图标）打开通用监控面板：
+
+- **Streams · live**：每路图像流的 fps（带迷你曲线）、帧号、网络延迟，约 2.5s 轮询系统 WebUI，不需要调试器。
+- **Modules**：全部模块 running / restarting / stopped 一眉状态卡片。
+- **Watches**：点 **+ Watch expression**，选目标进程（Orchestrator 或任意已附加 Compute），输入任意表达式，如 `tracker.pose`、`last_depths.mean()`。受调试协议限制，表达式只能在进程**暂停时**求值——命中断点/单步/暂停的瞬间全表自动刷新，每行显示值、目标进程和新鲜度；千万级张量自动抽样，坏 `__repr__` 对象不会卡死面板。
+- **Recent events**：来自系统事件总线的模块生命周期事件（started / crashed / restarted）。
+
+想要任意变量的**持续活数据**？需要在每个 worker 内加一个只读求值 action（这是调试协议的根本边界，不是实现取舍），可与系统维护者协商加一个 `watch` action。
+
+## 系统日志流
+
+`AutoSurg: Show System Log Stream` 通过系统 WebUI 的 WebSocket 实时 tail 正在运行的系统的日志（端口 = ControlPlane 端口 − 8，默认 **5552**；可用 `autosurg.webuiPort` 覆盖）。先回填最多 200 条缓冲日志，然后实时跟随，并按指数退避自动重连。每行包含时间、级别、来源；存在时附带 `rid=<请求 id>`，可把一次业务请求在 gateway → orchestrator → compute 三段日志串成完整链路。
+
+默认在**终端**（不产生进程的伪终端）中渲染以显示颜色：级别、时间、来源遵循 Loguru 默认配色（`autosurg.logView = terminal`）。VS Code 输出面板从 API 上就无法渲染 ANSI 颜色，若更习惯它的搜索可以设为 `output`（纯文本）或 `both`。来自日志流的转义序列会做净化：颜色码透传，其余（光标/备用屏/OSC 控制序列）一律剥离，恶意日志行无法篡改你的终端。关闭日志终端即断开日志流，再次运行命令即可重连。
 
 ## 配置检查
 

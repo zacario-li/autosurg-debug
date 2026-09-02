@@ -14,12 +14,20 @@
   "command.visualizeTensor": "以图像 / Tensor 查看",
   "command.viewPly": "AutoSurg: 打开点云 (PLY)…",
   "command.viewCloud": "AutoSurg: 以点云查看 (强制)",
+  "command.openLogs": "AutoSurg: 打开系统日志流",
+  "command.monitor": "AutoSurg: 打开监控面板",
+  "command.watch": "AutoSurg: 添加监控表达式",
   "viewContainers.autosurg": "AutoSurg",
   "views.modules": "模块",
   "config.title": "AutoSurg",
   "config.configPath": "modules.yaml 路径；非绝对路径时以工作区根目录为基准。",
   "config.controlHost": "ControlPlane 地址。",
   "config.controlPython": "运行 ControlPlane 客户端所用的 Python 解释器。",
+  "config.webuiPort": "日志流使用的系统 WebUI (HTTP/WS) 端口。0 表示 ControlPlane 端口减 8（默认 5552）。",
   "config.debugPortBase": "临时 Compute 调试时尝试的第一个端口。Orchestrator 热插使用约定端口 5684。",
-  "config.tensorHover": "调试器暂停时，悬停 Python 变量显示张量/图像缩略图。"
+  "config.tensorHover": "调试器暂停时，悬停 Python 变量显示张量/图像缩略图。",
+  "config.logView": "系统日志流的显示位置。输出面板无法渲染 ANSI 颜色；终端视图带有 Loguru 风格颜色。",
+  "config.logView.terminal": "终端(伪终端,Loguru 风格颜色)",
+  "config.logView.output": "输出面板(纯文本)",
+  "config.logView.both": "两者同时"
 }

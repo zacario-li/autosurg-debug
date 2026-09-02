@@ -6,6 +6,9 @@ import * as vscode from "vscode";
 import { LineCounter, parseDocument } from "yaml";
 import { registerTensorView } from "./tensorView";
 import { registerPlyView } from "./plyView";
+import { LogStreamPanel } from "./logStream";
+import { EventTimeline } from "./eventTimeline";
+import { MonitorPanel } from "./monitorPanel";
 
 type JsonMap = Record<string, unknown>;
 
@@ -49,6 +52,7 @@ interface ControlOptions {
 type NodeKind = "category" | "module" | "compute" | "orchestrator";
 
 class AutoSurgNode extends vscode.TreeItem {
+  baseDescription = "";
   constructor(
     readonly nodeKind: NodeKind,
     readonly name: string,
@@ -89,7 +93,8 @@ class AutoSurgNode extends vscode.TreeItem {
     if (!isRestartable) {
       details.push("not restartable");
     }
-    this.description = details.join(" · ");
+    this.baseDescription = details.join(" · ");
+    this.description = this.baseDescription;
     this.tooltip = buildTooltip(name, nodeKind, config, runtime);
   }
 }
@@ -145,7 +150,19 @@ class AutoSurgTreeProvider implements vscode.TreeDataProvider<AutoSurgNode> {
     this.changed.fire(undefined);
   }
 
+  /** Last lifecycle event note ("crashed 12s ago"), injected on activate. */
+  timeline: { noteFor(name: string): string | undefined } | undefined;
+
   getTreeItem(element: AutoSurgNode): vscode.TreeItem {
+    if (element.nodeKind === "compute" || element.nodeKind === "module") {
+      const note = this.timeline?.noteFor(element.name);
+      const description = note
+        ? `${element.baseDescription} · ${note}`
+        : element.baseDescription;
+      if (element.description !== description) {
+        element.description = description;
+      }
+    }
     return element;
   }
 
@@ -438,7 +455,10 @@ type ComputeDebugMode = "hot" | "restart";
 
 const activeDebugStarts = new Set<string>();
 const reservedDebugPorts = new Set<number>();
-const activeDebugSessionNames = new Set<string>();
+// DebugSession.id -> session.name. Keyed by the platform-assigned session id
+// so add/remove stay consistent even if two sessions share a name; session
+// names are labels we choose, not platform-contractual identifiers.
+const activeDebugSessions = new Map<string, string>();
 
 const ORCHESTRATOR_ATTACH_PREFIX = "AutoSurg: orchestrator (";
 
@@ -450,7 +470,7 @@ function isMainProcessDebugSession(name: string): boolean {
 }
 
 function isMainProcessAttached(): boolean {
-  return [...activeDebugSessionNames].some(isMainProcessDebugSession);
+  return [...activeDebugSessions.values()].some(isMainProcessDebugSession);
 }
 
 async function debugNode(
@@ -526,7 +546,7 @@ async function debugTarget(
     return;
   }
 
-  const alreadyAttached = [...activeDebugSessionNames].some((name) =>
+  const alreadyAttached = [...activeDebugSessions.values()].some((name) =>
     name.startsWith(`AutoSurg: ${target.name} (`),
   );
   if (alreadyAttached) {
@@ -733,7 +753,7 @@ async function debugAllComputes(
   const failures: string[] = [];
   let attached = 0;
   for (const compute of computes) {
-    const alreadyAttached = [...activeDebugSessionNames].some((name) =>
+    const alreadyAttached = [...activeDebugSessions.values()].some((name) =>
       name.startsWith(`AutoSurg: ${compute.name} (`),
     );
     if (alreadyAttached) {
@@ -764,7 +784,9 @@ async function debugFullSystem(
   control: ControlClient,
   configPath: string,
 ): Promise<void> {
-  const mainSession = activeDebugSessionNames.has("AutoSurg: Full System");
+  const mainSession = [...activeDebugSessions.values()].includes(
+    "AutoSurg: Full System",
+  );
   const controlOnline = await isControlPlaneOnline(control);
 
   if (controlOnline && !mainSession) {
@@ -993,21 +1015,76 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const control = new ControlClient(configPath, readControlPort(configPath));
   const provider = new AutoSurgTreeProvider(configPath, control);
+  let monitorSink: MonitorPanel | undefined;
+  const timeline = new EventTimeline();
+  timeline.onEvent = (event) => {
+    provider.refresh();
+    monitorSink?.handleEvent(event);
+  };
+  provider.timeline = timeline;
+  timeline.start(
+    vscode.workspace
+      .getConfiguration("autosurg")
+      .get<string>("controlPython", "python3"),
+    vscode.Uri.joinPath(
+      context.extensionUri,
+      "resources",
+      "event_relay.py",
+    ).fsPath,
+  );
   const diagnostics = new ConfigurationDiagnostics(configPath);
-  if (vscode.debug.activeDebugSession) {
-    activeDebugSessionNames.add(vscode.debug.activeDebugSession.name);
+  const debugApi = vscode.debug as typeof vscode.debug & {
+    activeDebugSessions?: readonly vscode.DebugSession[];
+  };
+  for (const session of debugApi.activeDebugSessions ?? [
+    ...(debugApi.activeDebugSession ? [debugApi.activeDebugSession] : []),
+  ]) {
+    activeDebugSessions.set(session.id, session.name);
   }
+  const webuiOverride = vscode.workspace
+    .getConfiguration("autosurg")
+    .get<number>("webuiPort", 0);
+  const webuiPort =
+    webuiOverride > 0
+      ? webuiOverride
+      : Math.max(1, readControlPort(configPath) - 8);
+  const logStreamPanel = new LogStreamPanel(context.extensionUri);
+  const monitorPanel = new MonitorPanel(context, () => {
+    const settings = vscode.workspace.getConfiguration("autosurg");
+    const override = settings.get<number>("webuiPort", 0);
+    return {
+      host: settings.get<string>("controlHost", "localhost"),
+      port:
+        override > 0 ? override : Math.max(1, readControlPort(configPath) - 8),
+    };
+  });
+  monitorSink = monitorPanel;
 
   context.subscriptions.push(
     diagnostics,
+    logStreamPanel,
+    monitorPanel,
+    timeline,
     vscode.debug.onDidStartDebugSession((session) => {
-      activeDebugSessionNames.add(session.name);
+      activeDebugSessions.set(session.id, session.name);
     }),
     vscode.debug.onDidTerminateDebugSession((session) => {
-      activeDebugSessionNames.delete(session.name);
+      activeDebugSessions.delete(session.id);
     }),
     vscode.window.registerTreeDataProvider("autosurg.modules", provider),
     vscode.commands.registerCommand("autosurg.refresh", () => provider.refresh()),
+    vscode.commands.registerCommand("autosurg.openLogs", () => {
+      const host = vscode.workspace
+        .getConfiguration("autosurg")
+        .get<string>("controlHost", "localhost");
+      logStreamPanel.open({ host, port: webuiPort });
+    }),
+    vscode.commands.registerCommand("autosurg.monitor", () =>
+      monitorPanel.show(),
+    ),
+    vscode.commands.registerCommand("autosurg.watch", () =>
+      void monitorPanel.promptAdd(),
+    ),
     vscode.commands.registerCommand("autosurg.validate", () =>
       diagnostics.validate(true),
     ),

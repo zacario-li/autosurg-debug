@@ -1023,8 +1023,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
     tip.hidden = true;
   });
 
-  window.addEventListener("message", (event) => {
-    const msg = event.data || {};
+  function dispatch(msg) {
     if (msg.type === "payload") {
       void applyPayload(msg.data);
     } else if (msg.type === "comparePayload") {
@@ -1051,6 +1050,39 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
       }
       tip.textContent = bits.join("  ");
     }
+  }
+
+  // Reassembly for oversized messages streamed from the extension host
+  // (stream-start / stream-data / stream-end carrying JSON string slices).
+  const incomingStreams = new Map();
+  window.addEventListener("message", (event) => {
+    const msg = event.data || {};
+    if (msg.type === "stream-start") {
+      incomingStreams.set(msg.id, []);
+      showOverlay("Streaming " + Math.round((msg.total || 0) / 1024) + " KB…");
+      return;
+    }
+    if (msg.type === "stream-data") {
+      const parts = incomingStreams.get(msg.id);
+      if (parts) {
+        parts.push(String(msg.data || ""));
+      }
+      return;
+    }
+    if (msg.type === "stream-end") {
+      const parts = incomingStreams.get(msg.id);
+      incomingStreams.delete(msg.id);
+      if (!parts) {
+        return;
+      }
+      try {
+        dispatch(JSON.parse(parts.join("")));
+      } catch (error) {
+        showOverlay("Corrupted payload from the debugger. Click Refresh.");
+      }
+      return;
+    }
+    dispatch(msg);
   });
 
   window.addEventListener("resize", () => {

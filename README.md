@@ -18,6 +18,9 @@ AutoSurg Debug is a VS Code / Cursor extension for managing and debugging AutoSu
 - Automatic allocation of free debugpy ports
 - Checks YAML syntax, duplicate keys, dependency references, and path presets
 - Right-click Tensor / Mat image inspection while paused at a breakpoint, with slicing, pseudo-color, and a pixel probe
+- Interactive 3D point cloud viewer: `.ply` files, `(N, 2..7)` tensors, and Open3D / trimesh clouds, with a force-cloud command
+- Live system log tail (`AutoSurg: Show System Log Stream`) with backfill, auto-reconnect, and `rid=` request correlation
+- Monitor dashboard: live stream/module telemetry plus a cross-process watch list of arbitrary expressions captured whenever any attached process pauses
 - 3D point cloud viewer (WebGL): auto-detects `(N, 3..7)` tensors, Open3D / trimesh clouds, and `.ply` files, with orbit camera, RGB/intensity/height coloring, and point picking
 
 Debug ports are preferredly hot-injected into running workers or the `main.py` process via ControlPlane `start_debug`; no `AUTOSURG_DEBUG_PORT` configuration is needed in `modules.yaml`. Each Compute row in the sidebar has two debug buttons: the green plug is Hot-Attach, the orange cycle arrow is Restart-Attach. Orchestrator rows also have a green Hot-Attach; since all Orchestrators share the single `main.py` process, only one main-process debug session is created.
@@ -128,6 +131,42 @@ Arrays with shape `(N, 3)` … `(N, 7)` (xyz, optional intensity or RGB), Open3D
 5. Auto-detection is a heuristic. Whenever a variable opens as an image/heatmap but you know it is a cloud, use the `View` selector in the viewer toolbar (`Auto` / `Image` / `Point Cloud`) — the forced path also accepts `(3, N)` transposed, `(B, N, C)` batched, and `(N, 2)` planar layouts that auto-detection ignores.
 
 Clouds larger than 150k points are uniformly downsampled for transfer; statistics in the sidebar always report the full cloud. PLY support covers ASCII, binary_little_endian, and binary_big_endian files with `x/y/z`, optional `red/green/blue` and `intensity` properties.
+
+## Monitor Dashboard
+
+`AutoSurg: Open Monitor Panel` (dashboard icon in the sidebar title) opens a
+general-purpose watch dashboard:
+
+- **Streams · live** — fps (with sparkline), frame number, and network latency per image stream, polled from the system WebUI every ~2.5 s. No debugger required.
+- **Modules** — running / restarting / stopped chips for every module at a glance.
+- **Watches** — click **+ Watch expression**, pick the target process (Orchestrator or any attached Compute) and type any expression: `tracker.pose`, `last_depths.mean()`, `len(pending_tasks)`. Because the Debug Adapter Protocol can only evaluate while a process is stopped, **values are captured whenever that process pauses** (breakpoint hit, step, or pause); each row shows the value, target, and its age. A 10 M-element tensor is subsampled; broken `__repr__` objects cannot hang the board.
+- **Recent events** — module lifecycle events (started / crashed / restarted) from the system event bus.
+
+Want continuously-live values for arbitrary expressions? That requires a tiny
+read-only evaluate action inside each worker (the protocol boundary is
+fundamental, not an implementation shortcut) — see the system-side `watch`
+action proposal discussed with the maintainers.
+
+## System Log Stream
+
+`AutoSurg: Show System Log Stream` tails the live log stream of the running
+system over the WebUI WebSocket (port = ControlPlane − 8, i.e. **5552** by
+default; override with `autosurg.webuiPort`). It first backfills up to 200
+buffered lines, then follows live and reconnects automatically with backoff.
+Each line shows time, level, origin and — when present — the
+`rid=<request-id>` that ties the gateway → orchestrator → compute log lines
+of one business request together, which makes cross-module debugging
+traceable end to end.
+
+By default the stream renders in a **terminal** (a processless pseudoterminal)
+so it can show colors: levels, timestamps and origins follow Loguru's default
+palette (`autosurg.logView = terminal`). VS Code Output channels can never
+render ANSI colors, so pick `output` (plain text) or `both` for the classic
+panel if you prefer its search UI. Escape sequences from the stream are
+sanitized: color codes pass through, everything else (cursor/alt-screen/OSC
+control sequences) is stripped, so a hostile log line cannot paint your
+prompt. Closing the log terminal disconnects the stream; run the command
+again to reconnect.
 
 ## Validating Configuration
 

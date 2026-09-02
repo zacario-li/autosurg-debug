@@ -2,7 +2,7 @@
   "name": "autosurg-debug",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.2.17",
+  "version": "0.2.21",
   "publisher": "autosurg",
   "icon": "media/icon.png",
   "author": {
@@ -21,6 +21,7 @@
   "files": [
     "dist",
     "media",
+    "resources",
     "LICENSE",
     "README.md",
     "README.zh-cn.md",
@@ -37,7 +38,7 @@
   "activationEvents": [
     "onView:autosurg.modules",
     "onLanguage:yaml",
-    "onDebug",
+    "onStartupFinished",
     "onCommand:autosurg.visualizeTensor",
     "onCommand:autosurg.viewPly"
   ],
@@ -115,6 +116,22 @@
         "command": "autosurg.viewCloud",
         "title": "%command.viewCloud%",
         "category": "AutoSurg"
+      },
+      {
+        "command": "autosurg.openLogs",
+        "title": "%command.openLogs%",
+        "category": "AutoSurg"
+      },
+      {
+        "command": "autosurg.monitor",
+        "title": "%command.monitor%",
+        "category": "AutoSurg",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "autosurg.watch",
+        "title": "%command.watch%",
+        "category": "AutoSurg"
       }
     ],
     "keybindings": [
@@ -144,6 +161,16 @@
     },
     "menus": {
       "view/title": [
+        {
+          "command": "autosurg.monitor",
+          "when": "view == autosurg.modules",
+          "group": "navigation@1"
+        },
+        {
+          "command": "autosurg.openLogs",
+          "when": "view == autosurg.modules",
+          "group": "navigation@5"
+        },
         {
           "command": "autosurg.refresh",
           "when": "view == autosurg.modules",
@@ -273,6 +300,24 @@
           "type": "string",
           "default": "python3",
           "description": "%config.controlPython%"
+        },
+        "autosurg.webuiPort": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "%config.webuiPort%"
+        },
+        "autosurg.logView": {
+          "type": "string",
+          "enum": ["terminal", "output", "both"],
+          "default": "terminal",
+          "description": "%config.logView%",
+          "enumDescriptions": [
+            "%config.logView.terminal%",
+            "%config.logView.output%",
+            "%config.logView.both%"
+          ]
         },
         "autosurg.debugPortBase": {
           "type": "number",

@@ -14,12 +14,20 @@
   "command.visualizeTensor": "View as Image / Tensor",
   "command.viewPly": "AutoSurg: Open Point Cloud (PLY)...",
   "command.viewCloud": "AutoSurg: View as Point Cloud (Force)",
+  "command.openLogs": "AutoSurg: Show System Log Stream",
+  "command.monitor": "AutoSurg: Open Monitor Panel",
+  "command.watch": "AutoSurg: Add Watch Expression",
   "viewContainers.autosurg": "AutoSurg",
   "views.modules": "Modules",
   "config.title": "AutoSurg",
   "config.configPath": "Path to modules.yaml, relative to the workspace root when not absolute.",
   "config.controlHost": "ControlPlane host.",
   "config.controlPython": "Python executable used for the ControlPlane client.",
+  "config.webuiPort": "Port of the system WebUI (HTTP/WS) used for log streaming. 0 means ControlPlane port minus 8 (default 5552).",
   "config.debugPortBase": "First port considered for temporary compute debugging. Orchestrator hot-attach uses conventional port 5684.",
-  "config.tensorHover": "Show a tensor/image thumbnail when hovering a Python variable while the debugger is paused."
+  "config.tensorHover": "Show a tensor/image thumbnail when hovering a Python variable while the debugger is paused.",
+  "config.logView": "Where to render the system log stream. Output channels cannot render ANSI colors; the terminal view shows Loguru-style colors.",
+  "config.logView.terminal": "Terminal (pseudoterminal, Loguru-style colors)",
+  "config.logView.output": "Output panel (plain text)",
+  "config.logView.both": "Both views"
 }

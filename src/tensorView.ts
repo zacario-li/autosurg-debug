@@ -100,7 +100,7 @@ interface DebugVariableArg {
   container?: { evaluateName?: string };
 }
 
-const PYTHON_TYPES = new Set(["python", "debugpy", "Python"]);
+export const PYTHON_TYPES = new Set(["python", "debugpy", "Python"]);
 const CPP_TYPES = new Set(["cppdbg", "lldb", "cppvsdbg", "gdb"]);
 const MAX_SIDES = [384, 256, 160, 96];
 const HOVER_KEYWORDS = new Set([
@@ -506,6 +506,7 @@ class TensorViewPanel {
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
   private disposed = false;
   private probing = false;
+  private postSeq = 0;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -595,6 +596,15 @@ class TensorViewPanel {
     if (this.disposed) {
       return;
     }
+    if (options?.quiet) {
+      // Hidden tab + per-step auto refresh: DAP evaluate round trips are
+      // invisible to the user, so wait until the tab is actually shown and
+      // then fetch the freshest value once.
+      await this.waitVisible();
+      if (this.disposed) {
+        return;
+      }
+    }
     const item = vscode.debug.activeStackItem;
     if (item?.session.id === this.session.id && "frameId" in item) {
       this.frameId = item.frameId;
@@ -628,7 +638,23 @@ class TensorViewPanel {
         data: preparePayload(result, this.expression),
       });
     } catch (error) {
-      const message = String(error);
+      const message = error instanceof Error ? error.message : String(error);
+      const notStopped =
+        message.trim() === "notStopped" || /\bnotStopped\b/.test(message);
+      if (notStopped) {
+        // DAP's one structured error token: the target is running. Quiet
+        // refreshes just skip; explicit ones explain instead of guessing.
+        if (options?.quiet) {
+          return;
+        }
+        this.post({
+          type: "status",
+          state: "out-of-scope",
+          message:
+            "The debugger is running. Pause execution to refresh this value.",
+        });
+        return;
+      }
       const outOfScope = /not defined|not available|cannot evaluate|out of scope|NameError|syntax error/i.test(
         message,
       );
@@ -754,11 +780,66 @@ class TensorViewPanel {
   }
 
   private post(message: Record<string, unknown>): void {
-    if (!this.disposed) {
-      void this.panel.webview.postMessage(message);
+    if (this.disposed) {
+      return;
     }
+    let json: string;
+    try {
+      json = JSON.stringify(message);
+    } catch {
+      return;
+    }
+    if (json.length <= MAX_POST_CHUNK) {
+      void this.panel.webview.postMessage(message);
+      return;
+    }
+    // Oversized payloads (big images, 150k-point clouds) are streamed as
+    // ordered string chunks; the webview reassembles before parsing.
+    const id = `p${++this.postSeq}`;
+    void (async () => {
+      await this.panel.webview.postMessage({
+        type: "stream-start",
+        id,
+        total: json.length,
+      });
+      for (let offset = 0; offset < json.length; offset += MAX_POST_CHUNK) {
+        await this.waitVisible();
+        if (this.disposed) {
+          return;
+        }
+        await this.panel.webview.postMessage({
+          type: "stream-data",
+          id,
+          data: json.slice(offset, offset + MAX_POST_CHUNK),
+        });
+      }
+      if (!this.disposed) {
+        void this.panel.webview.postMessage({ type: "stream-end", id });
+      }
+    })();
+  }
+
+  /** Resolves once the panel is visible (or disposed). */
+  private waitVisible(): Promise<void> {
+    if (this.disposed || this.panel.visible) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      const stateSub = this.panel.onDidChangeViewState(() => {
+        if (this.disposed || this.panel.visible) {
+          stateSub.dispose();
+          resolve();
+        }
+      });
+      void this.panel.onDidDispose(() => {
+        stateSub.dispose();
+        resolve();
+      });
+    });
   }
 }
+
+const MAX_POST_CHUNK = 256 * 1024;
 
 function preparePayload(result: ExtractOk, expression: string): ExtractOk {
   const data: ExtractOk = { ...result, expression };
