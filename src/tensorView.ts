@@ -1444,75 +1444,208 @@ export function renderHtml(webview: vscode.Webview, scriptUri: vscode.Uri): stri
   <style>
     :root {
       color-scheme: dark light;
-      --bg: var(--vscode-editor-background, #1e1e1e);
-      --fg: var(--vscode-editor-foreground, #d4d4d4);
-      --muted: var(--vscode-descriptionForeground, #9aa4b2);
-      --border: var(--vscode-panel-border, #3c3c3c);
-      --btn: var(--vscode-button-secondaryBackground, #3a3d41);
-      --btn-fg: var(--vscode-button-secondaryForeground, #fff);
-      --accent: var(--vscode-button-background, #0e639c);
+      --bg: var(--vscode-editor-background, #1b1d23);
+      --fg: var(--vscode-editor-foreground, #d7dce4);
+      --muted: var(--vscode-descriptionForeground, #8f98a6);
+      --faint: color-mix(in srgb, var(--muted) 62%, transparent);
+      --border: color-mix(in srgb, var(--vscode-panel-border, #3c3c3c) 60%, transparent);
+      --surface: color-mix(in srgb, var(--bg) 92%, #ffffff 8%);
+      --surface-raised: color-mix(in srgb, var(--bg) 84%, #ffffff 16%);
+      --btn: color-mix(in srgb, var(--surface-raised) 70%, transparent);
+      --btn-fg: var(--fg);
+      --accent: var(--vscode-button-background, #3d7bfd);
+      --accent-fg: var(--vscode-button-foreground, #ffffff);
+      --ring: color-mix(in srgb, var(--accent) 55%, transparent);
+      --pill: color-mix(in srgb, var(--surface-raised) 55%, transparent);
+      font-size: var(--vscode-font-size, 13px);
     }
-    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font: 12px/1.4 var(--vscode-font-family, sans-serif); }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg);
+      font: 12px/1.45 var(--vscode-font-family, sans-serif); }
     #app { display: flex; flex-direction: column; height: 100%; }
-    header, .toolbar {
-      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-      padding: 6px 10px; border-bottom: 1px solid var(--border);
+
+    /* ---------- app bar ---------- */
+    header {
+      display: flex; align-items: center; gap: 10px; min-height: 40px;
+      padding: 4px 12px; border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg,
+        color-mix(in srgb, var(--surface) 60%, transparent), transparent);
     }
-    .workspace { display: flex; flex: 1; min-height: 0; }
-    .title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 36%; }
+    .brand {
+      display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+      color: var(--muted); font-size: 11px; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .brand .gem { color: var(--accent); font-size: 12px; }
+    .bar-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+    .title {
+      font-weight: 600; font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 12.5px; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; max-width: 34%;
+    }
+    .chip {
+      flex-shrink: 0; padding: 1px 8px; border-radius: 999px; font-size: 10.5px;
+      background: var(--pill); border: 1px solid var(--border); color: var(--muted);
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-variant-numeric: tabular-nums; white-space: nowrap; max-width: 30%;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .chip:not(:empty) { display: inline-block; }
+    .chip:empty { display: none; }
     .actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
-    button, select {
+
+    /* ---------- buttons ---------- */
+    button {
       background: var(--btn); color: var(--btn-fg); border: 1px solid var(--border);
-      border-radius: 4px; padding: 3px 8px; cursor: pointer;
+      border-radius: 6px; padding: 3px 10px; min-height: 24px; cursor: pointer;
+      font: inherit; font-size: 11.5px; transition: background .12s ease, border-color .12s ease;
     }
-    button.active { outline: 1px solid var(--accent); }
-    label { display: flex; gap: 6px; align-items: center; color: var(--muted); }
-    input[type=range] { width: 120px; }
-    #stage { position: relative; flex: 1; overflow: hidden; cursor: grab; background: #111; }
+    button:hover { background: var(--surface-raised); border-color: color-mix(in srgb, var(--muted) 45%, transparent); }
+    button:active { transform: translateY(1px); }
+    button.active, button.active:hover {
+      background: color-mix(in srgb, var(--accent) 22%, transparent);
+      border-color: var(--ring); color: var(--fg);
+    }
+    button:focus-visible { outline: 1px solid var(--ring); outline-offset: 1px; }
+
+    /* ---------- contextual control bar ---------- */
+    .toolbar {
+      display: flex; gap: 6px 14px; align-items: center; flex-wrap: wrap;
+      padding: 6px 12px; border-bottom: 1px solid var(--border);
+    }
+    .toolbar:empty { display: none; }
+    .ctrl {
+      display: inline-flex; gap: 7px; align-items: center; padding: 2px 4px;
+      border-radius: 6px;
+    }
+    .ctrl:hover { background: color-mix(in srgb, var(--surface) 45%, transparent); }
+    .ctrl > label, .toolbar > label {
+      display: inline-flex; gap: 6px; align-items: center; color: var(--muted);
+      font-size: 11px; letter-spacing: 0.03em;
+    }
+    .ctrl-label, .toolbar > label > :first-child {
+      text-transform: uppercase; font-size: 10px; letter-spacing: 0.09em;
+      color: var(--faint); font-weight: 600; user-select: none;
+    }
+    .ctrl .val, .toolbar .val {
+      min-width: 26px; text-align: right; color: var(--fg);
+      font-variant-numeric: tabular-nums;
+      font-family: var(--vscode-editor-font-family, monospace);
+    }
+    [hidden] { display: none !important; }
+
+    /* ---------- form controls ---------- */
+    select {
+      appearance: none; -webkit-appearance: none;
+      background: var(--btn) url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%2398a1af' d='M4.5 6.5 8 10l3.5-3.5z'/%3E%3C/svg%3E") no-repeat right 4px center / 16px 16px;
+      color: var(--btn-fg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 2px 22px 2px 8px; min-height: 24px; cursor: pointer; font: inherit; font-size: 11.5px;
+      transition: border-color .12s ease;
+    }
+    select:hover { border-color: color-mix(in srgb, var(--muted) 45%, transparent); }
+    select:focus-visible { outline: 1px solid var(--ring); outline-offset: 1px; }
+    input[type=range] {
+      width: 110px; accent-color: var(--accent); cursor: ew-resize; height: 20px;
+    }
+    input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+    input[type=range]:focus-visible{ outline: 1px solid var(--ring); border-radius: 4px; }
+
+    /* ---------- stage ---------- */
+    .workspace { display: flex; flex: 1; min-height: 0; }
+    #stage {
+      position: relative; flex: 1; overflow: hidden; cursor: grab;
+      background:
+        radial-gradient(120% 100% at 50% 0%, #22242c 0%, #14151a 78%);
+    }
+    #stage:active { cursor: grabbing; }
     #cv, #glcv { position: absolute; inset: 0; }
     #glcv[hidden], #cv[hidden] { display: none; }
+    .hud {
+      position: absolute; left: 10px; bottom: 10px; z-index: 2;
+      display: flex; gap: 6px; align-items: center; pointer-events: none;
+    }
+    #zoom {
+      padding: 2px 9px; border-radius: 999px; font-size: 10.5px;
+      background: color-mix(in srgb, #000 55%, transparent);
+      border: 1px solid color-mix(in srgb, #fff 10%, transparent);
+      color: #cfd6e4; font-variant-numeric: tabular-nums;
+      font-family: var(--vscode-editor-font-family, monospace);
+      backdrop-filter: blur(4px);
+    }
+    .stage-hint {
+      position: absolute; right: 10px; bottom: 10px; z-index: 2; pointer-events: none;
+      font-size: 10px; color: rgba(207,214,228,.45); letter-spacing: .04em;
+    }
     #overlay {
       position: absolute; inset: 0; display: grid; place-items: center;
-      background: color-mix(in srgb, var(--bg) 72%, transparent); padding: 24px; text-align: center;
+      background: color-mix(in srgb, var(--bg) 55%, transparent);
+      backdrop-filter: blur(3px); padding: 24px; text-align: center; z-index: 3;
     }
     #overlay[hidden] { display: none; }
-    #tip {
-      position: absolute; pointer-events: none; background: rgba(0,0,0,.82); color: #fff;
-      padding: 4px 8px; border-radius: 4px; font-variant-numeric: tabular-nums; z-index: 2;
+    .empty-state { display: grid; justify-items: center; gap: 10px; }
+    .empty-state .halo {
+      width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center;
+      border: 1px solid var(--ring); color: var(--accent); font-size: 18px;
+      background: color-mix(in srgb, var(--accent) 10%, transparent);
     }
-    #zoom { color: var(--muted); min-width: 42px; }
+    .empty-state .k { color: var(--fg); font-weight: 600; font-size: 12.5px; }
+    .empty-state .s { color: var(--muted); max-width: 320px; }
+    #tip {
+      position: absolute; pointer-events: none; z-index: 4;
+      background: color-mix(in srgb, #05070b 88%, transparent); border: 1px solid var(--border);
+      color: #e6ebf4; padding: 5px 9px; border-radius: 6px; font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      font-family: var(--vscode-editor-font-family, monospace);
+      box-shadow: 0 6px 20px rgba(0,0,0,.45); backdrop-filter: blur(4px);
+    }
+
+    /* ---------- inspector ---------- */
     #inspector {
-      width: 228px; flex-shrink: 0; border-left: 1px solid var(--border);
-      overflow: auto; padding: 10px;
+      width: 236px; flex-shrink: 0; border-left: 1px solid var(--border);
+      overflow: auto; padding: 12px;
+      background: color-mix(in srgb, var(--surface) 30%, var(--bg));
     }
     #inspector h2 {
-      margin: 0 0 8px; font-size: 11px; letter-spacing: 0.04em;
-      text-transform: uppercase; color: var(--muted); font-weight: 600;
+      margin: 4px 0 8px; font-size: 10px; letter-spacing: 0.11em;
+      text-transform: uppercase; color: var(--faint); font-weight: 700;
     }
-    #inspector dl { display: grid; grid-template-columns: 78px 1fr; gap: 5px 8px; margin: 0 0 14px; }
-    #inspector dt { color: var(--muted); }
-    #inspector dd { margin: 0; word-break: break-word; font-variant-numeric: tabular-nums; }
+    #inspector dl {
+      display: grid; grid-template-columns: 76px 1fr; gap: 4px 10px; margin: 0 0 16px;
+      padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px;
+      background: color-mix(in srgb, var(--surface) 45%, transparent);
+    }
+    #inspector dt { color: var(--muted); font-size: 11px; }
+    #inspector dd {
+      margin: 0; word-break: break-word; font-variant-numeric: tabular-nums;
+      font-family: var(--vscode-editor-font-family, monospace); font-size: 11px;
+    }
     #inspector .row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    #inspector select { width: 100%; }
     #dead { color: #f85149; }
+    #diffStats dl { margin-top: 8px; }
   </style>
 </head>
 <body>
   <div id="app">
     <header>
+      <span class="brand"><span class="gem">◈</span>AutoSurg</span>
+      <span class="bar-sep"></span>
       <div class="title" id="expr">Tensor</div>
+      <span class="chip" id="viewBadge"></span>
       <div class="actions">
-        <span id="zoom">100%</span>
-        <button id="fit">Fit</button>
-        <button id="one">1:1</button>
-        <button id="gridBtn">Grid</button>
-        <button id="snap">Snapshot</button>
+        <button id="fit" title="Fit to view">Fit</button>
+        <button id="one" title="Actual pixels">1:1</button>
+        <button id="gridBtn" title="Show channel grid">Grid</button>
+        <span class="bar-sep"></span>
+        <button id="snap" title="Pin current frame for compare">Snapshot</button>
         <label><input type="checkbox" id="auto" checked> Auto</label>
-        <button id="refresh">Refresh</button>
+        <span class="bar-sep"></span>
+        <button id="refresh" title="Re-evaluate expression">Refresh</button>
       </div>
     </header>
     <div class="toolbar">
-      <label id="batchWrap" hidden>B <input type="range" id="batch" min="0" max="0" value="0"> <span id="batchVal">0</span></label>
-      <label id="chanWrap" hidden>C <input type="range" id="channel" min="0" max="0" value="0"> <span id="chanVal">0</span></label>
+      <label id="batchWrap" hidden>B <input type="range" id="batch" min="0" max="0" value="0"> <span class="val" id="batchVal">0</span></label>
+      <label id="chanWrap" hidden>C <input type="range" id="channel" min="0" max="0" value="0"> <span class="val" id="chanVal">0</span></label>
       <label id="rgbWrap" hidden><input type="checkbox" id="rgb" checked> RGB</label>
       <label id="bgrWrap" hidden><input type="checkbox" id="bgr"> BGR→RGB</label>
       <label id="cmapWrap" hidden>Map
@@ -1532,7 +1665,7 @@ export function renderHtml(webview: vscode.Webview, scriptUri: vscode.Uri): stri
         </select>
       </label>
       <span id="cloudWrap" hidden>
-        <label>Size <input type="range" id="ptSize" min="1" max="10" value="2"> <span id="ptSizeVal">2</span>px</label>
+        <label>Size <input type="range" id="ptSize" min="1" max="10" value="2"> <span class="val" id="ptSizeVal">2</span>px</label>
         <label>Color
           <select id="cloudColor">
             <option value="auto" selected>Auto</option>
@@ -1562,8 +1695,15 @@ export function renderHtml(webview: vscode.Webview, scriptUri: vscode.Uri): stri
     <div id="stage">
       <canvas id="cv"></canvas>
       <canvas id="glcv" hidden></canvas>
-      <div id="overlay">Pause the debugger, then right-click a tensor or Mat.</div>
+      <div id="overlay">
+        <div class="empty-state">
+          <div class="halo">◈</div>
+          <div class="k">Nothing loaded yet</div>
+          <div class="s">Pause the debugger, then right-click a tensor or Mat — or run "View Tensor…" on an expression.</div>
+        </div>
+      </div>
       <div id="tip" hidden></div>
+      <div class="hud"><span id="zoom">100%</span></div>
     </div>
     <aside id="inspector">
       <h2>Stats</h2>

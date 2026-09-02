@@ -2,7 +2,7 @@
   "name": "autosurg-debug",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.2.21",
+  "version": "0.2.22",
   "publisher": "autosurg",
   "icon": "media/icon.png",
   "author": {

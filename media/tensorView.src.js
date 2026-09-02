@@ -532,6 +532,14 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
     return value.toPrecision(4);
   }
 
+  function setBadge(text) {
+    const el = document.getElementById("viewBadge");
+    if (el) {
+      el.textContent = text || "";
+      el.title = text || "";
+    }
+  }
+
   function renderStats(p) {
     if (p.format === "cloud") {
       renderCloudStats(p);
@@ -709,6 +717,11 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
     state.payload = p;
     exprEl.textContent = p.expression || "";
     exprEl.title = p.expression || "";
+    setBadge(
+      p.format === "cloud"
+        ? "point cloud"
+        : (p.shape ? p.shape.join("×") : "") + (p.dtype ? " · " + p.dtype : "")
+    );
     renderStats(p);
     setControls(p);
     showOverlay("");
@@ -1618,6 +1631,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
         return "<dt>" + escapeHtml(row[0]) + "</dt><dd>" + escapeHtml(row[1]) + "</dd>";
       })
       .join("");
+    const pts = c.count || 0;
+    setBadge("PCL " + (pts || 0).toLocaleString() + " pts");
   }
 
   ptSizeInput.addEventListener("input", () => {
