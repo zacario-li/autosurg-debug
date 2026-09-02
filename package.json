@@ -2,7 +2,7 @@
   "name": "autosurg-debug",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.2.22",
+  "version": "0.2.23",
   "publisher": "autosurg",
   "icon": "media/icon.png",
   "author": {
@@ -26,7 +26,8 @@
     "README.md",
     "README.zh-cn.md",
     "package.nls.json",
-    "package.nls.zh-cn.json"
+    "package.nls.zh-cn.json",
+    "docs/**"
   ],
   "engines": {
     "vscode": "^1.90.0"
@@ -310,7 +311,11 @@
         },
         "autosurg.logView": {
           "type": "string",
-          "enum": ["terminal", "output", "both"],
+          "enum": [
+            "terminal",
+            "output",
+            "both"
+          ],
           "default": "terminal",
           "description": "%config.logView%",
           "enumDescriptions": [
