@@ -107,7 +107,7 @@ Orchestrator 与 Supervisor 运行在同一个 `main.py` 进程中。对任意�
 
 **示例 —— 在同一个断点处查看当前相机画面与实时点云：**
 
-![断点处的 tensor 图像与强制点云](docs/view_img_ply.png)
+![断点处的 tensor 图像与强制点云](docs/view_img_ply.jpg)
 
 1. 附加 compute 进程（单模块调试或整套多开），停在目标行 —— 图中
    `_handle_run_point_cloud` 刚解码出左右视图并算出了 `point_cloud`。

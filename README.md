@@ -108,7 +108,7 @@ A paused breakpoint freezes the entire main process (all Orchestrators, Gateway,
 **Example — see the current camera frame and the live point cloud at one
 breakpoint:**
 
-![Tensor image and forced point cloud at a breakpoint](docs/view_img_ply.png)
+![Tensor image and forced point cloud at a breakpoint](docs/view_img_ply.jpg)
 
 1. Attach the compute process (single-module debug or Multi-Attach) and pause
    on the line of interest — in this screenshot `_handle_run_point_cloud`
