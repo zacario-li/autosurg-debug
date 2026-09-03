@@ -114,7 +114,7 @@ Orchestrator 与 Supervisor 运行在同一个 `main.py` 进程中。对任意�
 2. 图像：点击变量面板中 `left` / `right` 的眼睛图标（或悬停/直接命令
    "查看 Tensor…"），上方面板渲染 `(H, W, 3) uint8` 画面，支持 RGB/BGR→RGB
    切换、batch/channel 滑杆与缩放 HUD；标题旁的芯片显示
-   `1880×1920×3 · uint8`。
+   `1080×1920×3 · uint8`。
 3. 点云：对 `point_cloud` 右键 → "以点云查看(强制)"，第二个面板即渲染，
    芯片显示降采样后的 `PCL 2,073,600 pts`；点大小、着色（这里是 viridis
    强度）、up 轴与自由旋转都可以实时调节。
