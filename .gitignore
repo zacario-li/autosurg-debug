@@ -7,3 +7,6 @@ dist/
 
 # pi agent runtime artifacts (caches, fusion transcripts)
 .pi/
+
+# attach harness build output
+.test/

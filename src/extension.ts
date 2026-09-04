@@ -9,6 +9,20 @@ import { registerPlyView } from "./plyView";
 import { LogStreamPanel } from "./logStream";
 import { EventTimeline } from "./eventTimeline";
 import { MonitorPanel } from "./monitorPanel";
+import {
+  hotAttach,
+  pollUntilReady,
+  type HotAttachOutcome,
+} from "./attachCore";
+import {
+  classifyControlError,
+  classifyControlReply,
+  formatDiagnosticsBundle,
+  formatFailureLine,
+  type AttachAttemptRecord,
+  type ClassifiedFailure,
+  type DiagnosticsHeader,
+} from "./attachDiagnostics";
 
 type JsonMap = Record<string, unknown>;
 
@@ -455,6 +469,9 @@ type ComputeDebugMode = "hot" | "restart";
 
 const activeDebugStarts = new Set<string>();
 const reservedDebugPorts = new Set<number>();
+/** Set once in activate; used by the diagnostics bundle. */
+let currentConfigPath: string | undefined;
+let extensionVersion = "unknown";
 // DebugSession.id -> session.name. Keyed by the platform-assigned session id
 // so add/remove stay consistent even if two sessions share a name; session
 // names are labels we choose, not platform-contractual identifiers.
@@ -479,7 +496,7 @@ async function debugNode(
   control: ControlClient,
   configPath: string,
   mode: ComputeDebugMode | "orchestrator" = "orchestrator",
-): Promise<void> {
+): Promise<boolean> {
   const kinds: NodeKind[] =
     mode === "orchestrator"
       ? ["orchestrator"]
@@ -488,19 +505,20 @@ async function debugNode(
         : ["compute"];
   const target = node ?? (await provider.pickDebuggable(kinds));
   if (!target) {
-    return;
+    // The user cancelled the picker; that is not a failure.
+    return true;
   }
 
   if (activeDebugStarts.has(target.name)) {
     void vscode.window.showInformationMessage(
       `${target.name} is already waiting for a debugger.`,
     );
-    return;
+    return true;
   }
 
   activeDebugStarts.add(target.name);
   try {
-    await debugTarget(target, provider, control, configPath, mode);
+    return await debugTarget(target, provider, control, configPath, mode);
   } finally {
     activeDebugStarts.delete(target.name);
   }
@@ -512,22 +530,24 @@ async function debugTarget(
   control: ControlClient,
   configPath: string,
   mode: ComputeDebugMode | "orchestrator",
-): Promise<void> {
+): Promise<boolean> {
   if (target.nodeKind === "orchestrator") {
     if (mode === "restart") {
-      throw new Error("Restart-Attach applies to Compute modules only.");
+      void vscode.window.showErrorMessage(
+        "Restart-Attach applies to Compute modules only.",
+      );
+      return false;
     }
     if (mode === "hot") {
-      await hotAttachTarget(target, provider, control);
-      return;
+      return await hotAttachTarget(target, provider, control);
     }
     if (provider.runtimeFor(target.name)?.running) {
       void vscode.window.showWarningMessage(
         `${target.name} is already running. Use Hot-Attach to debug the live main.py process without restarting.`,
       );
-      return;
+      return true;
     }
-    await vscode.debug.startDebugging(undefined, {
+    const launched = await vscode.debug.startDebugging(undefined, {
       name: `AutoSurg: ${target.name}`,
       type: "debugpy",
       request: "launch",
@@ -539,11 +559,16 @@ async function debugTarget(
       console: "integratedTerminal",
       justMyCode: false,
     });
-    return;
+    if (!launched) {
+      void vscode.window.showErrorMessage(
+        `Unable to launch main.py for ${target.name}. Check that the Python debugger extension is installed.`,
+      );
+    }
+    return launched;
   }
 
   if (target.nodeKind !== "compute") {
-    return;
+    return true;
   }
 
   const alreadyAttached = [...activeDebugSessions.values()].some((name) =>
@@ -553,90 +578,104 @@ async function debugTarget(
     void vscode.window.showInformationMessage(
       `${target.name} is already attached to a debugger.`,
     );
-    return;
+    return true;
   }
 
   if (mode === "hot") {
-    await hotAttachTarget(target, provider, control);
-    return;
+    return await hotAttachTarget(target, provider, control);
   }
-  await restartAttachCompute(target, provider, control);
+  return await restartAttachCompute(target, provider, control);
 }
 
 async function hotAttachTarget(
   target: AutoSurgNode,
   provider: AutoSurgTreeProvider,
   control: ControlClient,
-): Promise<void> {
+): Promise<boolean> {
   const isOrchestrator = target.nodeKind === "orchestrator";
   if (isOrchestrator && isMainProcessAttached()) {
     void vscode.window.showInformationMessage(
       "The orchestrator process is already attached. All orchestrators share main.py, so breakpoints in any of them will hit this session.",
     );
-    return;
+    return true;
   }
 
-  const liveStatus = await control.request("status", target.name);
-  const isRunning =
-    liveStatus.alive === true || liveStatus.restarting === true;
-  if (!isRunning) {
-    throw new Error(
-      isOrchestrator
-        ? `${target.name} is not running. Start the system first, or use Debug Orchestrator to launch main.py.`
-        : `${target.name} is not running. Start it first, or use Restart-Attach.`,
-    );
-  }
-  if (liveStatus.restarting === true) {
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: `Waiting for ${target.name} to finish restarting`,
-        cancellable: false,
+  const outcome = await hotAttach(
+    control,
+    { module: target.name, isOrchestrator },
+    {
+      attach: (host, port) =>
+        attachComputeDebugger(
+          isOrchestrator ? "orchestrator" : target.name,
+          host,
+          port,
+        ),
+      waitUntilReady: async (module, timeoutMs) => {
+        const ready = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `Waiting for ${module} to finish restarting`,
+            cancellable: false,
+          },
+          () => pollUntilReady(control, module, timeoutMs),
+        );
+        if (!ready) {
+          throw new Error(`Timed out waiting for ${module} to become ready`);
+        }
       },
-      () => waitForModuleReady(control, target.name, 70_000),
-    );
+    },
+  );
+
+  attachJournal.record("hot", outcome);
+  if (outcome.kind === "failed") {
+    await reportAttachFailure(outcome);
+    return false;
   }
-  const hot = await tryHotPlugDebug(control, target.name);
-  if (!hot) {
-    throw new Error(
-      isOrchestrator
-        ? `${target.name} hot-attach failed. ControlPlane may not support orchestrator start_debug yet, or port 5684 is in use.`
-        : `${target.name} hot-attach failed. The worker may not support start_debug yet, or the debug port is in use. Use Restart-Attach if you can drop process state.`,
-    );
-  }
-  if (hot.underDebugger) {
+  if (outcome.kind === "under-debugger") {
     void vscode.window.showInformationMessage(
       "main.py is already running under a debugger. Breakpoints in orchestrators will hit that session.",
     );
-    return;
+    return true;
   }
-  const sessionName = isOrchestrator ? "orchestrator" : target.name;
-  await attachComputeDebugger(sessionName, hot.host, hot.port);
+
   const kept = isOrchestrator
     ? "all orchestrators share this process"
     : "process state kept";
   void vscode.window.showInformationMessage(
-    hot.already
-      ? `AutoSurg attached to ${target.name} on ${hot.host}:${hot.port} (already listening).`
-      : `AutoSurg hot-attached to ${target.name} on ${hot.host}:${hot.port} (${kept}).`,
+    outcome.kind === "already-listening"
+      ? `AutoSurg attached to ${target.name} on ${outcome.host}:${outcome.port} (already listening).`
+      : `AutoSurg hot-attached to ${target.name} on ${outcome.host}:${outcome.port} (${kept}).`,
   );
   setTimeout(() => void provider.refresh(), 1000);
+  return true;
 }
 
 async function restartAttachCompute(
   target: AutoSurgNode,
   provider: AutoSurgTreeProvider,
   control: ControlClient,
-): Promise<void> {
+): Promise<boolean> {
+  const startedAt = Date.now();
   const liveStatus = await control.request("status", target.name);
   const isRunning =
     liveStatus.alive === true || liveStatus.restarting === true;
-  const port = await findAvailablePort(
-    vscode.workspace
-      .getConfiguration("autosurg")
-      .get<number>("debugPortBase", 5678),
-  );
-  reservedDebugPorts.add(port);
+  // Port allocation has to live inside the guarded region: it can fail, and a
+  // rejection outside the try would leave the command with an unhandled error
+  // instead of a journalled, attributed failure.
+  let port: number;
+  try {
+    port = await findAvailablePort(
+      vscode.workspace
+        .getConfiguration("autosurg")
+        .get<number>("debugPortBase", 5678),
+    );
+    reservedDebugPorts.add(port);
+  } catch (error) {
+    const failure = classifyControlError(error);
+    attachJournal.push(failureRecord("restart", target.name, failure, startedAt));
+    await reportClassifiedFailure(target.name, failure);
+    return false;
+  }
 
   try {
     const action = isRunning ? "restart" : "start";
@@ -648,7 +687,12 @@ async function restartAttachCompute(
       },
     });
     if (result.status === "error") {
-      throw new Error(String(result.message ?? `Failed to ${action} module`));
+      const failure = classifyControlReply(result);
+      attachJournal.push(
+        failureRecord("restart", target.name, failure, startedAt, port),
+      );
+      await reportClassifiedFailure(target.name, failure);
+      return false;
     }
 
     await vscode.window.withProgress(
@@ -661,58 +705,273 @@ async function restartAttachCompute(
     );
 
     await attachComputeDebugger(target.name, "localhost", port);
+    attachJournal.push({
+      at: new Date().toISOString(),
+      action: "restart",
+      module: target.name,
+      outcome: "ok",
+      endpoint: `localhost:${port}`,
+      ms: Date.now() - startedAt,
+    });
     void vscode.window.showInformationMessage(
       `AutoSurg restart-attached ${target.name} on localhost:${port} (process was restarted).`,
     );
     setTimeout(() => void provider.refresh(), 1000);
+    return true;
+  } catch (error) {
+    const failure = classifyControlError(error);
+    attachJournal.push(
+        failureRecord("restart", target.name, failure, startedAt, port),
+      );
+    await reportClassifiedFailure(target.name, failure);
+    return false;
   } finally {
     reservedDebugPorts.delete(port);
   }
 }
 
-interface HotPlugDebug {
-  host: string;
-  port: number;
-  already: boolean;
-  underDebugger?: boolean;
+function failureRecord(
+  action: "restart",
+  module: string,
+  failure: ClassifiedFailure,
+  startedAt: number,
+  port?: number,
+): AttachAttemptRecord {
+  return {
+    at: new Date().toISOString(),
+    action,
+    module,
+    outcome: "failed",
+    cause: failure.cause,
+    detail: failure.detail,
+    // No port until one was actually allocated - a record must not claim an
+    // endpoint this attempt never had.
+    endpoint: port === undefined ? undefined : `localhost:${port}`,
+    ms: Date.now() - startedAt,
+  };
 }
 
-async function tryHotPlugDebug(
-  control: ControlClient,
-  module: string,
-): Promise<HotPlugDebug | undefined> {
-  try {
-    const result = await control.request("start_debug", module, {
-      timeoutMs: 15_000,
-    });
-    if (result.status === "error") {
-      return undefined;
-    }
-    if (result.under_debugger === true) {
-      return {
-        host: "localhost",
-        port: 0,
-        already: true,
-        underDebugger: true,
-      };
-    }
-    const port = Number(result.port);
-    if (!Number.isInteger(port) || port <= 0) {
-      return undefined;
-    }
-    const host =
-      typeof result.host === "string" && result.host.trim()
-        ? result.host
-        : "localhost";
-    return {
-      host,
-      port,
-      already: result.already === true,
-    };
-  } catch {
-    // Old ControlPlane, argparse without start_debug, or listen failure.
-    return undefined;
+/**
+ * Folder for attach-attempt logs. Empty (default) keeps them in the
+ * extension's global storage; a configured path makes them easy to drop into
+ * a shared folder when a colleague reports a problem.
+ */
+function diagnosticsFolder(context: vscode.ExtensionContext): string {
+  const configured = vscode.workspace
+    .getConfiguration("autosurg")
+    .get<string>("diagnosticsFolder", "")
+    .trim();
+  if (!configured) {
+    return "";
   }
+  if (path.isAbsolute(configured)) {
+    return configured;
+  }
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  return root
+    ? path.join(root, configured)
+    : path.join(context.extensionPath, configured);
+}
+
+/**
+ * Attach attempts of this window session, newest first, plus one JSONL line
+ * per attempt under the extension's global storage folder. Failures must be
+ * explicable from the bundle alone so the author is not a human strace.
+ */
+class AttachJournal {
+  private readonly attempts: AttachAttemptRecord[] = [];
+  private file: string | undefined;
+  private queue: Promise<void> = Promise.resolve();
+  private writesSinceTrim = 0;
+
+  setFile(file: string): void {
+    this.file = file;
+    void fs.promises.mkdir(path.dirname(file), { recursive: true });
+  }
+
+  record(
+    action: AttachAttemptRecord["action"],
+    outcome: HotAttachOutcome,
+  ): void {
+    this.push({
+      at: new Date().toISOString(),
+      action,
+      module: outcome.module,
+      outcome: outcome.kind === "failed" ? "failed" : "ok",
+      cause: outcome.failure?.cause,
+      detail: outcome.failure?.detail,
+      endpoint:
+        outcome.port && outcome.port > 0
+          ? `${outcome.host ?? "localhost"}:${outcome.port}`
+          : undefined,
+      workerPid: outcome.workerPid,
+      already: outcome.kind === "already-listening" ? true : undefined,
+      ms: outcome.ms,
+    });
+  }
+
+  push(record: AttachAttemptRecord): void {
+    this.attempts.unshift(record);
+    if (this.attempts.length > 40) {
+      this.attempts.length = 40;
+    }
+    if (!this.file) {
+      return;
+    }
+    const file = this.file;
+    const line = `${JSON.stringify(record)}\n`;
+    this.writesSinceTrim += 1;
+    this.queue = this.queue.then(async () => {
+      try {
+        await fs.promises.appendFile(file, line, "utf8");
+        // Rewriting a 2000-line file on every attempt is pointless churn; the
+        // cap only has to hold approximately.
+        if (this.writesSinceTrim >= 25) {
+          this.writesSinceTrim = 0;
+          await trimToLines(file, 2000);
+        }
+      } catch {
+        // Diagnostics must never break a debug session.
+      }
+    });
+  }
+
+  recent(limit = 12): AttachAttemptRecord[] {
+    return this.attempts.slice(0, limit);
+  }
+
+  logFile(): string | undefined {
+    return this.file;
+  }
+}
+
+const attachJournal = new AttachJournal();
+
+async function trimToLines(file: string, maxLines: number): Promise<void> {
+  const text = await fs.promises.readFile(file, "utf8");
+  const lines = text.split("\n").filter((line) => line.trim());
+  if (lines.length <= maxLines) {
+    return;
+  }
+  await fs.promises.writeFile(
+    file,
+    `${lines.slice(-maxLines).join("\n")}\n`,
+    "utf8",
+  );
+}
+
+function diagnosticsHeader(configPath: string): DiagnosticsHeader {
+  const settings = vscode.workspace.getConfiguration("autosurg");
+  return {
+    extensionVersion,
+    vscodeVersion: vscode.version,
+    platform: process.platform,
+    configPath,
+    controlHost: settings.get<string>("controlHost", "localhost"),
+    controlPort: configPath ? readControlPort(configPath) : 0,
+    controlPython: settings.get<string>("controlPython", "python3"),
+    debugPortBase: settings.get<number>("debugPortBase", 5678),
+    activeSessions: [...activeDebugSessions.values()],
+    reservedPorts: [...reservedDebugPorts],
+  };
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await vscode.env.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Last attach attempts as pasteable text, including the log path. */
+async function buildDiagnosticsBundle(configPath: string): Promise<string> {
+  let fromFile: string[] = [];
+  const file = attachJournal.logFile();
+  if (file) {
+    try {
+      const text = await fs.promises.readFile(file, "utf8");
+      fromFile = text
+        .split("\n")
+        .filter((line) => line.trim())
+        .slice(-40)
+        .reverse();
+    } catch {
+      fromFile = [];
+    }
+  }
+  const inMemory = formatDiagnosticsBundle(
+    diagnosticsHeader(configPath),
+    attachJournal.recent(12),
+  );
+  if (fromFile.length === 0) {
+    return `${inMemory}\nlog: ${file ?? "not available"}`;
+  }
+  // Earlier window sessions are only in the file, so keep them verbatim.
+  return `${inMemory}\nlog: ${file}\nolder attempts (raw JSONL):\n${fromFile.join(
+    "\n",
+  )}`;
+}
+
+/**
+ * Attach failures surface as advice plus a copy button. The stack trace is
+ * gone on purpose: the journal already keeps the raw reply.
+ */
+async function reportAttachFailure(outcome: HotAttachOutcome): Promise<void> {
+  const failure = outcome.failure;
+  if (!failure) {
+    return;
+  }
+  await reportClassifiedFailure(outcome.module, failure);
+}
+
+/** One presentation path for every attach failure, hot or restart. */
+async function reportClassifiedFailure(
+  module: string,
+  failure: ClassifiedFailure,
+): Promise<void> {
+  const picked = await vscode.window.showErrorMessage(
+    formatFailureLine(module, failure),
+    "Copy Diagnostics",
+    "Open Config",
+  );
+  if (picked === "Copy Diagnostics") {
+    const bundle = await buildDiagnosticsBundle(
+      currentConfigPath ?? "(no modules.yaml found)",
+    );
+    if (await copyText(bundle)) {
+      void vscode.window.showInformationMessage(
+        "Attach diagnostics copied - paste it to whoever is debugging this.",
+      );
+    } else {
+      void vscode.window.showWarningMessage(bundle);
+    }
+  } else if (picked === "Open Config") {
+    await vscode.commands.executeCommand(
+      "workbench.action.openSettings",
+      "@ext:autosurg.autosurg-debug",
+    );
+  }
+}
+
+async function showAttachDiagnostics(): Promise<void> {
+  const bundle = await buildDiagnosticsBundle(
+    currentConfigPath ?? "(no modules.yaml found)",
+  );
+  if (await copyText(bundle)) {
+    void vscode.window.showInformationMessage(
+      `AutoSurg attach diagnostics copied (${attachJournal.recent(99).length} recent attempt(s)${
+        attachJournal.logFile() ? ", plus the on-disk log" : ""
+      }).`,
+    );
+    return;
+  }
+  const document = await vscode.workspace.openTextDocument({
+    language: "log",
+    content: bundle,
+  });
+  await vscode.window.showTextDocument(document, { preview: true });
 }
 
 async function attachComputeDebugger(
@@ -750,8 +1009,8 @@ async function debugAllComputes(
     return;
   }
 
-  const failures: string[] = [];
-  let attached = 0;
+  const attached: string[] = [];
+  const failed: string[] = [];
   for (const compute of computes) {
     const alreadyAttached = [...activeDebugSessions.values()].some((name) =>
       name.startsWith(`AutoSurg: ${compute.name} (`),
@@ -759,23 +1018,28 @@ async function debugAllComputes(
     if (alreadyAttached) {
       continue;
     }
-    try {
-      const mode: ComputeDebugMode =
-        compute.runtime?.running === true ? "hot" : "restart";
-      await debugNode(compute, provider, control, configPath, mode);
-      attached += 1;
-    } catch (error) {
-      failures.push(`${compute.name}: ${String(error)}`);
+    const mode: ComputeDebugMode =
+      compute.runtime?.running === true ? "hot" : "restart";
+    // Each module reports its own advice, so the summary only tracks names.
+    if (await debugNode(compute, provider, control, configPath, mode)) {
+      attached.push(compute.name);
+    } else {
+      failed.push(compute.name);
     }
   }
 
-  if (failures.length > 0) {
-    throw new Error(
-      `Attached ${attached} Compute module(s); failed: ${failures.join("; ")}`,
+  if (failed.length > 0) {
+    const picked = await vscode.window.showWarningMessage(
+      `Attached ${attached.length} Compute module(s); ${failed.length} failed: ${failed.join(", ")}`,
+      "Copy Diagnostics",
     );
+    if (picked === "Copy Diagnostics") {
+      await showAttachDiagnostics();
+    }
+    return;
   }
   void vscode.window.showInformationMessage(
-    `AutoSurg attached ${attached} Compute module(s).`,
+    `AutoSurg attached ${attached.length} Compute module(s).`,
   );
 }
 
@@ -890,15 +1154,10 @@ async function waitForModuleReady(
   module: string,
   timeoutMs: number,
 ): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const status = await control.request("status", module);
-    if (status.ready === true && status.restarting !== true) {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 300));
+  // One readiness definition for both attach paths.
+  if (!(await pollUntilReady(control, module, timeoutMs))) {
+    throw new Error(`Timed out waiting for ${module} to become ready`);
   }
-  throw new Error(`Timed out waiting for ${module} to become ready`);
 }
 
 function findAvailablePort(start: number): Promise<number> {
@@ -1004,6 +1263,17 @@ function readControlPort(configPath: string): number {
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   registerTensorView(context);
   registerPlyView(context);
+  extensionVersion = String(
+    context.extension?.packageJSON?.version ?? "unknown",
+  );
+  attachJournal.setFile(
+    diagnosticsFolder(context)
+      ? path.join(diagnosticsFolder(context)!, "attach-attempts.jsonl")
+      : vscode.Uri.joinPath(
+          context.globalStorageUri,
+          "attach-attempts.jsonl",
+        ).fsPath,
+  );
 
   const configPath = await resolveConfigPath();
   if (!configPath) {
@@ -1012,6 +1282,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     return;
   }
+  currentConfigPath = configPath;
 
   const control = new ControlClient(configPath, readControlPort(configPath));
   const provider = new AutoSurgTreeProvider(configPath, control);
@@ -1073,6 +1344,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.window.registerTreeDataProvider("autosurg.modules", provider),
     vscode.commands.registerCommand("autosurg.refresh", () => provider.refresh()),
+    vscode.commands.registerCommand("autosurg.attachDiagnostics", () =>
+      showAttachDiagnostics(),
+    ),
     vscode.commands.registerCommand("autosurg.openLogs", () => {
       const host = vscode.workspace
         .getConfiguration("autosurg")

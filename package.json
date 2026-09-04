@@ -2,7 +2,7 @@
   "name": "autosurg-debug",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.2.24",
+  "version": "0.2.25",
   "publisher": "autosurg",
   "icon": "media/icon.png",
   "author": {
@@ -41,12 +41,14 @@
     "onLanguage:yaml",
     "onStartupFinished",
     "onCommand:autosurg.visualizeTensor",
-    "onCommand:autosurg.viewPly"
+    "onCommand:autosurg.viewPly",
+    "onCommand:autosurg.attachDiagnostics"
   ],
   "main": "./dist/extension.js",
   "scripts": {
     "compile": "esbuild src/extension.ts --bundle --platform=node --external:vscode --outfile=dist/extension.js --sourcemap && esbuild media/tensorView.src.js --bundle --format=iife --outfile=media/tensorView.js --minify",
-    "check": "tsc -p ./ --noEmit"
+    "check": "tsc -p ./ --noEmit",
+    "test:attach": "esbuild test/attachHarness.ts --bundle --platform=node --outfile=.test/attachHarness.cjs --format=cjs && node .test/attachHarness.cjs"
   },
   "contributes": {
     "commands": [
@@ -54,6 +56,11 @@
         "command": "autosurg.refresh",
         "title": "%command.refresh%",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "autosurg.attachDiagnostics",
+        "title": "%command.attachDiagnostics%",
+        "icon": "$(report)"
       },
       {
         "command": "autosurg.validate",
@@ -162,6 +169,11 @@
     },
     "menus": {
       "view/title": [
+        {
+          "command": "autosurg.attachDiagnostics",
+          "when": "view == autosurg.modules",
+          "group": "navigation@6"
+        },
         {
           "command": "autosurg.monitor",
           "when": "view == autosurg.modules",
@@ -335,6 +347,11 @@
           "type": "boolean",
           "default": true,
           "description": "%config.tensorHover%"
+        },
+        "autosurg.diagnosticsFolder": {
+          "type": "string",
+          "default": "",
+          "description": "%config.diagnosticsFolder%"
         }
       }
     }

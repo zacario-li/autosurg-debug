@@ -178,6 +178,7 @@ Orchestrator 与 Supervisor 运行在同一个 `main.py` 进程中。对任意�
 - `autosurg.configPath`：`modules.yaml` 路径；相对路径以工作区根目录为基准
 - `autosurg.controlHost`：ControlPlane 地址，默认 `localhost`
 - `autosurg.controlPython`：运行 ControlPlane 客户端的 Python，默认 `python3`
+- `autosurg.diagnosticsFolder`：`attach-attempts.jsonl` 的存放目录；留空表示扩展的全局存储目录
 - `autosurg.debugPortBase`：自动寻找调试端口的起始值，默认 `5678`
 - `autosurg.tensorHover`：调试暂停时在代码悬停处显示张量缩略图，默认开启
 
@@ -195,9 +196,18 @@ Orchestrator 与 Supervisor 运行在同一个 `main.py` 进程中。对任意�
 
 热插成功后即可发业务请求。若程序停在断点上，该 Compute 的 RPC 会等待并可能触发客户端超时。
 
-### 热插失败、模块被重启了
+### 热挂载失败
 
-旧版 ControlPlane 没有 `start_debug`、worker 尚未加载新代码、或约定 debug 端口被占用时，插件会回退到重启路径。确认已重启带 `start_debug` 的 `main.py`，并检查端口 5678–5683 是否空闲。
+Hot-Attach 不会悄悄重启任何东西：注入失败时会停下并告诉你原因。提示语只会给一个具体成因，例如
+
+- `stereo: debugpy is not importable inside the target module [debugpy_import_failed]` → 在该模块使用的解释器里装 `debugpy`；
+- `stereo: ControlPlane does not support start_debug at all [action_not_supported]` → 正在运行的 `main.py` 早于热挂载支持；重启系统，或改用 Restart-Attach；
+- `stereo: The worker is listening, but VS Code did not start the attach [attach_refused]` → 另一个窗口的旧会话还占着端口；执行 *Developer: Reload Window*；
+- `stereo: Could not reach the ControlPlane [control_plane_offline]` → 先启动 `main.py`，或修正 `autosurg.controlHost`。
+
+每个失败提示都带 **复制诊断信息** 按钮（也可用命令 `AutoSurg: Copy Attach Diagnostics`，或模块视图标题上的报告图标）。内容包含插件/VS Code 版本、ControlPlane 地址、当前调试会话、已保留端口，以及最近若干次挂载尝试与原始回复——把它粘给别人，比复述“我点了哪几个按钮”有用得多。每次尝试也会追加写入 `attach-attempts.jsonl`（扩展全局存储目录）；把 `autosurg.diagnosticsFolder` 指向共享目录即可集中收集。
+
+只有你主动选择 **Restart-Attach** 时才会重启模块（进程内状态会清空）。如果你希望它自动重启，那是一个需要明说的选择：自动重启会掩盖“到底是不是 debugpy 注入本身坏了”。
 
 ## 作者
 

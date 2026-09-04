@@ -200,6 +200,7 @@ Results are shown in the editor's Problems pane.
 - `autosurg.configPath`: path to `modules.yaml`; relative paths resolve against the workspace root
 - `autosurg.controlHost`: ControlPlane address, defaults to `localhost`
 - `autosurg.controlPython`: Python used to run the ControlPlane client, defaults to `python3`
+- `autosurg.diagnosticsFolder`: folder for `attach-attempts.jsonl`; empty means the extension's global storage folder
 - `autosurg.debugPortBase`: first port tried when auto-assigning debug ports, defaults to `5678`
 - `autosurg.tensorHover`: show tensor thumbnails on hover while the debugger is paused, on by default
 
@@ -217,9 +218,18 @@ Check `system/log/latest_log.log` for startup errors of the target worker. Commo
 
 Business requests can be sent right after a successful hot-attach. If the program is stopped at a breakpoint, that Compute's RPC calls will wait and may trigger client-side timeouts.
 
-### Hot-attach failed and the module was restarted
+### Hot-attach failed
 
-When an old ControlPlane lacks `start_debug`, the worker has not loaded the new code, or the conventional debug port is occupied, the extension falls back to the restart path. Confirm that `main.py` with `start_debug` has been restarted, and check that ports 5678–5683 are free.
+Hot-Attach does **not** silently restart anything: when it cannot inject, it stops and tells you why. The message names one concrete cause, for example
+
+- `stereo: debugpy is not importable inside the target module [debugpy_import_failed]` → install `debugpy` in that module's interpreter;
+- `stereo: ControlPlane does not support start_debug at all [action_not_supported]` → the running `main.py` predates hot-attach; restart the system, or use Restart-Attach;
+- `stereo: The worker is listening, but VS Code did not start the attach [attach_refused]` → a stale session from another window; run *Developer: Reload Window*;
+- `stereo: could not reach the ControlPlane [control_plane_offline]` → start `main.py`, or fix `autosurg.controlHost`.
+
+Every failure offer **Copy Diagnostics** (also `AutoSurg: Copy Attach Diagnostics`, and the report icon in the module view title). The bundle contains the extension/VS Code versions, the ControlPlane endpoint, active debugger sessions, reserved ports, and the last attach attempts with their raw replies — paste it instead of describing what you clicked. Attempts are also appended to `attach-attempts.jsonl` in the extension's global storage folder; point `autosurg.diagnosticsFolder` somewhere shared to collect them.
+
+Only when you choose **Restart-Attach** is the module restarted (which clears in-process state). If you want that behaviour automatically, that is a deliberate choice: an auto-restart hides whether debugpy injection itself is broken.
 
 ## Author
 
