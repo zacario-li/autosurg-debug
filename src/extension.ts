@@ -8,6 +8,7 @@ import { registerTensorView } from "./tensorView";
 import { registerPlyView } from "./plyView";
 import { LogStreamPanel } from "./logStream";
 import { EventTimeline } from "./eventTimeline";
+import { DummyDebugSessions } from "./dummyDebug";
 import { MonitorPanel } from "./monitorPanel";
 import {
   hotAttach,
@@ -166,13 +167,17 @@ class AutoSurgTreeProvider implements vscode.TreeDataProvider<AutoSurgNode> {
 
   /** Last lifecycle event note ("crashed 12s ago"), injected on activate. */
   timeline: { noteFor(name: string): string | undefined } | undefined;
+  /** Standalone dummy workers, injected on activate (endpoint badge). */
+  dummy: { badgeFor(name: string): string | undefined } | undefined;
 
   getTreeItem(element: AutoSurgNode): vscode.TreeItem {
     if (element.nodeKind === "compute" || element.nodeKind === "module") {
       const note = this.timeline?.noteFor(element.name);
-      const description = note
-        ? `${element.baseDescription} · ${note}`
-        : element.baseDescription;
+      // A standalone dummy worker is invisible to ControlPlane, so the row is
+      // the only place its endpoint is visible.
+      const dummy = this.dummy?.badgeFor(element.name);
+      const description =
+        [element.baseDescription, dummy, note].filter(Boolean).join(" · ");
       if (element.description !== description) {
         element.description = description;
       }
@@ -1260,6 +1265,14 @@ function readControlPort(configPath: string): number {
   }
 }
 
+function refreshDummyContext(sessions: DummyDebugSessions): void {
+  void vscode.commands.executeCommand(
+    "setContext",
+    "autosurg.dummyRunning",
+    sessions.active().length > 0,
+  );
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   registerTensorView(context);
   registerPlyView(context);
@@ -1331,16 +1344,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   monitorSink = monitorPanel;
 
+  // Standalone ``--dummy-shm`` debugging. Needs no ControlPlane: the extension
+  // launches workers/run_compute_worker.py itself under debugpy.
+  const dummySessions = new DummyDebugSessions(context, configPath);
+  provider.dummy = dummySessions;
+  void vscode.commands.executeCommand("setContext", "autosurg.dummyRunning", false);
+
+  const dummyCommand =
+    (label: string, run: (node?: AutoSurgNode) => Promise<unknown>) =>
+    async (node?: AutoSurgNode): Promise<void> => {
+      try {
+        await run(node);
+      } catch (error) {
+        void vscode.window.showErrorMessage(
+          `AutoSurg ${label} failed: ${String(error)}`,
+        );
+      }
+      // The dummy badge on the row is the only visible trace of these sessions.
+      await provider.refresh();
+      refreshDummyContext(dummySessions);
+    };
+
   context.subscriptions.push(
     diagnostics,
     logStreamPanel,
     monitorPanel,
     timeline,
+    dummySessions,
     vscode.debug.onDidStartDebugSession((session) => {
       activeDebugSessions.set(session.id, session.name);
     }),
     vscode.debug.onDidTerminateDebugSession((session) => {
       activeDebugSessions.delete(session.id);
+      refreshDummyContext(dummySessions);
     }),
     vscode.window.registerTreeDataProvider("autosurg.modules", provider),
     vscode.commands.registerCommand("autosurg.refresh", () => provider.refresh()),
@@ -1400,6 +1436,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           `AutoSurg Full System debug failed: ${String(error)}`,
         ),
       ),
+    ),
+    vscode.commands.registerCommand(
+      "autosurg.debugDummy",
+      dummyCommand("dummy-attach", (node) => dummySessions.start(node?.name)),
+    ),
+    vscode.commands.registerCommand(
+      "autosurg.dummySend",
+      dummyCommand("dummy request", (node) => dummySessions.send(node?.name)),
+    ),
+    vscode.commands.registerCommand(
+      "autosurg.dummyStop",
+      dummyCommand("dummy stop", (node) => dummySessions.stop(node?.name)),
     ),
     vscode.commands.registerCommand("autosurg.start", (node?: AutoSurgNode) =>
       runLifecycle("start", node, provider, control),

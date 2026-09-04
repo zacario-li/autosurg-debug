@@ -2,7 +2,7 @@
   "name": "autosurg-debug",
   "displayName": "%displayName%",
   "description": "%description%",
-  "version": "0.2.25",
+  "version": "0.2.26",
   "publisher": "autosurg",
   "icon": "media/icon.png",
   "author": {
@@ -92,6 +92,21 @@
         "command": "autosurg.debugAllComputes",
         "title": "%command.debugAllComputes%",
         "icon": "$(server-process)"
+      },
+      {
+        "command": "autosurg.debugDummy",
+        "title": "%command.debugDummy%",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "autosurg.dummySend",
+        "title": "%command.dummySend%",
+        "icon": "$(send)"
+      },
+      {
+        "command": "autosurg.dummyStop",
+        "title": "%command.dummyStop%",
+        "icon": "$(debug-stop)"
       },
       {
         "command": "autosurg.debugFullSystem",
@@ -220,6 +235,16 @@
           "group": "inline@2"
         },
         {
+          "command": "autosurg.debugDummy",
+          "when": "view == autosurg.modules && viewItem =~ /autosurg\\.compute/",
+          "group": "inline@3"
+        },
+        {
+          "command": "autosurg.dummySend",
+          "when": "view == autosurg.modules && viewItem =~ /autosurg\\.compute/ && autosurg.dummyRunning",
+          "group": "inline@4"
+        },
+        {
           "command": "autosurg.debug",
           "when": "view == autosurg.modules && viewItem =~ /autosurg\\.orchestrator/",
           "group": "inline"
@@ -238,6 +263,21 @@
           "command": "autosurg.debug",
           "when": "view == autosurg.modules && viewItem =~ /autosurg\\.orchestrator/",
           "group": "autosurgDebug@1"
+        },
+        {
+          "command": "autosurg.debugDummy",
+          "when": "view == autosurg.modules && viewItem =~ /autosurg\\.compute/",
+          "group": "autosurgDebug@3"
+        },
+        {
+          "command": "autosurg.dummySend",
+          "when": "view == autosurg.modules && viewItem =~ /autosurg\\.compute/ && autosurg.dummyRunning",
+          "group": "autosurgDummy@1"
+        },
+        {
+          "command": "autosurg.dummyStop",
+          "when": "view == autosurg.modules && viewItem =~ /autosurg\\.compute/ && autosurg.dummyRunning",
+          "group": "autosurgDummy@2"
         },
         {
           "command": "autosurg.start",
@@ -342,6 +382,65 @@
           "minimum": 1024,
           "maximum": 65535,
           "description": "%config.debugPortBase%"
+        },
+        "autosurg.dummyNFrames": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 1024,
+          "description": "%config.dummyNFrames%"
+        },
+        "autosurg.dummyPreflight": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.dummyPreflight%"
+        },
+        "autosurg.dummyEndpointDir": {
+          "type": "string",
+          "default": "ipc:///tmp/autosurg/dummy",
+          "description": "%config.dummyEndpointDir%"
+        },
+        "autosurg.dummyShmKeys": {
+          "type": "string",
+          "default": "",
+          "description": "%config.dummyShmKeys%"
+        },
+        "autosurg.dummyFrameSource": {
+          "type": "string",
+          "default": "",
+          "description": "%config.dummyFrameSource%"
+        },
+        "autosurg.dummyExtraArgs": {
+          "type": "string",
+          "default": "",
+          "description": "%config.dummyExtraArgs%"
+        },
+        "autosurg.dummyRequestTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "maximum": 600000,
+          "description": "%config.dummyRequestTimeoutMs%"
+        },
+        "autosurg.dummyReadyTimeoutS": {
+          "type": "number",
+          "default": 180,
+          "minimum": 5,
+          "maximum": 3600,
+          "description": "%config.dummyReadyTimeoutS%"
+        },
+        "autosurg.dummyConsole": {
+          "type": "string",
+          "enum": [
+            "integratedTerminal",
+            "internalConsole"
+          ],
+          "default": "integratedTerminal",
+          "description": "%config.dummyConsole%",
+          "enumDescriptions": [
+            "%config.dummyConsole.terminal%",
+            "%config.dummyConsole.internal%"
+          ]
         },
         "autosurg.tensorHover": {
           "type": "boolean",

@@ -61,6 +61,33 @@ AutoSurg Debug 是用于管理和调试 AutoSurg Compute 模块及 Orchestrator 
 
 也可右键选择 `AutoSurg: Hot-Attach Compute` / `AutoSurg: Restart-Attach Compute`。
 
+## 不拉整个系统调单个 Compute
+
+上面的入口全部需要 `main.py`，因为它们插的是 supervisor 已经管着的 worker。只想快速改 `compute/compute_<module>.py`（不用 Gateway、Orchestrator、Ingress、相机）时，用 Compute 行上的第三个按钮：
+
+`AutoSurg: Dummy-Attach Compute（独立灌帧调试）`
+
+它自己用 debugpy 拉起 `workers/run_compute_worker.py`，并把 standalone 启动**不会**自动做的部分补齐：
+
+- **解释器**：取 `modules.yaml` 里该模块自己的 `python:` / `conda_env:`（`${MAIN_PYTHON}` 或解析不到的 conda 环境会降级为手动选）。
+- **`env:` 块**：原样注入（`LL_MODEL_PATH`、`CUDA_VISIBLE_DEVICES` 等）。standalone 不会下发这些，所以手工起的 worker 通常死在 `on_setup` 里。
+- **SHM key**：按该模块 `depends_on` 的 ingress 预选，灌的就是它读的。YAML 里 kind 是 `frozen_pool` 的 key 会被标出来：`--dummy-shm` 只能创建 ring buffer，这类 key 需要真实段（走 `autosurg.dummyExtraArgs`）。
+- **灌帧来源**（`random:WxH`、硬盘图、视频），按模块记忆，并在启动前先做一次尺寸预检。
+
+预检存在的原因是“进程起来了”不等于“读得到帧”。`--dummy-shm` 现在直接照抄同一份 modules.yaml 里 `shared_memory:` 的 `capacity` / `max_data_size` / `overwrite_mode`，所以帧只要比生产槽位上限大，就要等 import 开销全付完才报 `ValueError: dummy payload ... exceeds max_data_size`。预检用将来跑 worker 的那个解释器，在几百毫秒内把同一个判断做一遍，给出可用的尺寸，并给出这次调试会占用多少 /dev/shm。
+
+默认项是裸 `random`（1920×1080 左右拼接噪声，约 2.9 MB/帧），因为它就是生产实际承载的帧尺寸；`random:960x540`（约 0.7 MB）留给 /dev/shm 很小的容器。按仓库自带配置，每个帧 key 会分配 capacity × max_data_size = 512 MiB（实测：帧 + 腕部 + action 全开共 1225 MB，占本机 137 GB 的 0.89%），所以在笔记本上跑之前值得看一眼预检打印的占用行。stereo / tracker 真正需要的是硬盘图（左右拼接，宽约为高的两倍）。
+
+### 必须有人发请求
+
+帧是启动时灌一次然后 Idle 的：compute 循环只在收到 RPC 时执行业务代码，所以附上去的调试器只会等。worker 回应 ping 后，插件会提供
+
+`AutoSurg: 向 Dummy Worker 发送请求`
+
+它可以发 `ping` / `probe` 或任意自定义 JSON。请求端点走独立的 `ipc:///tmp/autosurg/dummy/<module>.rep.sock`，碰不到真实系统的 socket。反过来说它也**不会**被路由：standalone worker 不在任何 ComputeRegistry 里，你不发请求就永远没人发。
+
+断点挂起时 worker 不会回包，所以 `autosurg.dummyRequestTimeoutMs` 默认给得很宽，超时的提示也会区分“没起来”和“被你断点堵住了”。
+
 ## 调试全部 Compute
 
 保持命令行中的 `main.py` 正常运行，然后通过命令面板执行：
@@ -180,6 +207,14 @@ Orchestrator 与 Supervisor 运行在同一个 `main.py` 进程中。对任意�
 - `autosurg.controlPython`：运行 ControlPlane 客户端的 Python，默认 `python3`
 - `autosurg.diagnosticsFolder`：`attach-attempts.jsonl` 的存放目录；留空表示扩展的全局存储目录
 - `autosurg.debugPortBase`：自动寻找调试端口的起始值，默认 `5678`
+- `autosurg.dummyNFrames`：每个 dummy 段前面多少槽灌帧，默认 `8`；它不决定段的体积，capacity 与 max_data_size 直接照抄 modules.yaml
+- `autosurg.dummyFrameSource`：默认灌帧来源（`random`、`random:WxH[:mono]`，或图片/视频路径）；留空等于裸 `random`，也就是生产尺寸的噪声帧。槽位上限完全由 modules.yaml 决定，不由插件决定
+- `autosurg.dummyShmKeys`：不按 `depends_on` 推导，直接指定要灌哪些 key
+- `autosurg.dummyEndpointDir`：端点前缀，默认 `ipc:///tmp/autosurg/dummy`，dummy 调试不会碰到真实系统 socket
+- `autosurg.dummyExtraArgs`：额外原样追加的命令行参数，例如真实的 `--shm ...:frozen_pool`
+- `autosurg.dummyPreflight`：启动前先探测灌帧参数，默认开启
+- `autosurg.dummyReadyTimeoutS` / `autosurg.dummyRequestTimeoutMs`：等 worker 就绪的 ping 预算，以及一个请求最多等多种回复
+- `autosurg.dummyConsole`：worker 的 stdout 去处，默认 `integratedTerminal`（这样 Ctrl+C 能递到）
 - `autosurg.tensorHover`：调试暂停时在代码悬停处显示张量缩略图，默认开启
 
 ## 常见问题

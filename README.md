@@ -61,6 +61,33 @@ Pick the generated `autosurg-debug-*.vsix` file, then run:
 
 You can also right-click and choose `AutoSurg: Hot-Attach Compute` / `AutoSurg: Restart-Attach Compute`.
 
+## Debugging One Compute Module Without The Whole System
+
+The Flow A/B/C entries above all need `main.py`, because they reach a worker the supervisor already owns. To iterate on `compute/compute_<module>.py` alone - no Gateway, no Orchestrator, no ingress, no camera - use the third button on a Compute row:
+
+`AutoSurg: Dummy-Attach Compute (Standalone)`
+
+It launches `workers/run_compute_worker.py` itself under debugpy and wires up everything standalone startup does *not* do on its own:
+
+- **Interpreter** from the module's own `python:` / `conda_env:` entry in `modules.yaml` (`${MAIN_PYTHON}` and unresolvable envs fall back to a picker).
+- **`env:` block** replayed verbatim (`LL_MODEL_PATH`, `CUDA_VISIBLE_DEVICES`, ...). Standalone startup injects none of it, which is why a hand-started worker usually dies inside `on_setup`.
+- **SHM keys** pre-selected from the module's `depends_on` ingress modules, so what gets seeded is what the module reads. Keys whose YAML kind is `frozen_pool` are flagged: `--dummy-shm` can only create ring buffers, so those need a real `main.py` segment (`autosurg.dummyExtraArgs`).
+- **Frame source** (`random:WxH`, a still image, or a video), remembered per module, plus a pre-flight that sizes the encoded frames *before* the launch.
+
+The pre-flight exists because "it launched" is not "there are frames". `--dummy-shm` copies ring geometry (`capacity` / `max_data_size` / `overwrite_mode`) verbatim from `shared_memory:` in the same modules.yaml the worker starts with, so an oversized frame spec only raises `ValueError: dummy payload ... exceeds max_data_size` after the import cost. The pre-flight performs that same check in a few hundred milliseconds on the interpreter that will run the worker, names a source size that fits, and reports how much `/dev/shm` the session would occupy.
+
+Bare `random` (1920x1080 side-by-side noise, ~2.9 MB) is the default because it is the frame size production actually carries; `random:960x540` (~0.7 MB) is offered for containers with a small `/dev/shm`. With the shipped config each frame key allocates capacity x max_data_size = 512 MiB (measured: 1225 MB for a full frame + wrist + action session, 0.89% of this machine's 137 GB), so read the footprint line the pre-flight logs before doing this on a laptop. A still image from disk is what stereo / tracker work actually wants (side-by-side, roughly twice as wide as tall).
+
+### Something Has To Send A Request
+
+Frames are seeded once at startup and idle: the compute loop only runs business code when an RPC arrives, so an attached debugger would just sit there. Once the worker answers a ping, the extension offers
+
+`AutoSurg: Send Request To Dummy Worker`
+
+which sends `ping` / `probe` or any custom JSON request to the endpoint your dummy worker bound - and lists the action names it found in `compute/compute_<module>.py`, so you can fire the real handler your breakpoint sits in. Requests use a dedicated `ipc:///tmp/autosurg/dummy/<module>.rep.sock` namespace, so a dummy run never touches the real system's sockets. Conversely it never gets routed either: the worker is not registered with any ComputeRegistry, which is why no request arrives unless you send one.
+
+Because a suspended breakpoint holds the reply, `autosurg.dummyRequestTimeoutMs` is deliberately generous and the timeout message says what a suspend looks like.
+
 ## Debugging All Compute Modules
 
 Keep `main.py` running in the terminal, then run from the Command Palette:
@@ -202,6 +229,14 @@ Results are shown in the editor's Problems pane.
 - `autosurg.controlPython`: Python used to run the ControlPlane client, defaults to `python3`
 - `autosurg.diagnosticsFolder`: folder for `attach-attempts.jsonl`; empty means the extension's global storage folder
 - `autosurg.debugPortBase`: first port tried when auto-assigning debug ports, defaults to `5678`
+- `autosurg.dummyNFrames`: how many leading slots of each dummy buffer hold frames, defaults to `8`; it does not size the segment - capacity and max_data_size come straight from modules.yaml
+- `autosurg.dummyFrameSource`: default frame source for dummy debugging (`random`, `random:WxH[:mono]`, or an image/video path); empty means bare `random`, i.e. a production-size noise frame. Slot caps come from modules.yaml, not from this extension
+- `autosurg.dummyShmKeys`: override which SHM keys get seeded instead of deriving them from `depends_on`
+- `autosurg.dummyEndpointDir`: endpoint prefix, defaults to `ipc:///tmp/autosurg/dummy` so dummy runs never collide with live system sockets
+- `autosurg.dummyExtraArgs`: extra raw CLI args, e.g. a real `--shm ...:frozen_pool` attach
+- `autosurg.dummyPreflight`: probe frame specs before launching, on by default
+- `autosurg.dummyReadyTimeoutS` / `autosurg.dummyRequestTimeoutMs`: ping budget while the worker boots, and how long a request waits for its reply
+- `autosurg.dummyConsole`: where the worker's stdout goes (`integratedTerminal` by default, so Ctrl+C reaches it)
 - `autosurg.tensorHover`: show tensor thumbnails on hover while the debugger is paused, on by default
 
 ## Troubleshooting
@@ -230,6 +265,17 @@ Hot-Attach does **not** silently restart anything: when it cannot inject, it sto
 Every failure offer **Copy Diagnostics** (also `AutoSurg: Copy Attach Diagnostics`, and the report icon in the module view title). The bundle contains the extension/VS Code versions, the ControlPlane endpoint, active debugger sessions, reserved ports, and the last attach attempts with their raw replies — paste it instead of describing what you clicked. Attempts are also appended to `attach-attempts.jsonl` in the extension's global storage folder; point `autosurg.diagnosticsFolder` somewhere shared to collect them.
 
 Only when you choose **Restart-Attach** is the module restarted (which clears in-process state). If you want that behaviour automatically, that is a deliberate choice: an auto-restart hides whether debugpy injection itself is broken.
+
+### The dummy worker launched but never answers a ping
+
+Check the worker's own terminal first - the extension only says "not ready", the reason is in the worker's stderr. Usual causes, in order:
+
+- the frame source was larger than the yaml's `max_data_size` slot and the worker died at startup (the pre-flight normally catches this before launching)
+- the interpreter resolved to an environment without the module's dependencies; the extension asks for a path when `conda_env` is unreachable from this shell, and answering with a system Python produces exactly this symptom
+- a relative path in the module's `env:` block does not resolve from the worker's `cwd` (standalone runs with `cwd = system/`)
+- the module is simply slow: GPU modules spend minutes in `on_setup`, so raise `autosurg.dummyReadyTimeoutS`
+
+`Show Dummy Output` on any of these dialogs opens the `AutoSurg Dummy` log, which records the resolved interpreter, the exact worker argv, the pre-flight verdict, and one line per request/response.
 
 ## Author
 
