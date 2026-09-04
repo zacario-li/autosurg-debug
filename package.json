@@ -127,19 +127,16 @@
       },
       {
         "command": "autosurg.openLogs",
-        "title": "%command.openLogs%",
-        "category": "AutoSurg"
+        "title": "%command.openLogs%"
       },
       {
         "command": "autosurg.monitor",
         "title": "%command.monitor%",
-        "category": "AutoSurg",
         "icon": "$(dashboard)"
       },
       {
         "command": "autosurg.watch",
-        "title": "%command.watch%",
-        "category": "AutoSurg"
+        "title": "%command.watch%"
       }
     ],
     "keybindings": [
@@ -167,6 +164,12 @@
         }
       ]
     },
+    "submenus": [
+      {
+        "id": "autosurg.submenu.visualize",
+        "label": "%submenu.visualize%"
+      }
+    ],
     "menus": {
       "view/title": [
         {
@@ -254,38 +257,35 @@
       ],
       "debug/variables/context": [
         {
-          "command": "autosurg.visualizeTensor",
-          "when": "inDebugMode",
-          "group": "3_visualize"
-        },
-        {
-          "command": "autosurg.viewCloud",
+          "submenu": "autosurg.submenu.visualize",
           "when": "inDebugMode",
           "group": "3_visualize"
         }
       ],
       "debug/watch/context": [
         {
-          "command": "autosurg.visualizeTensor",
-          "when": "inDebugMode",
-          "group": "3_visualize"
-        },
-        {
-          "command": "autosurg.viewCloud",
+          "submenu": "autosurg.submenu.visualize",
           "when": "inDebugMode",
           "group": "3_visualize"
         }
       ],
       "editor/context": [
         {
-          "command": "autosurg.visualizeTensor",
+          "submenu": "autosurg.submenu.visualize",
           "when": "inDebugMode && editorHasSelection && editorLangId == python",
           "group": "3_visualize"
+        }
+      ],
+      "autosurg.submenu.visualize": [
+        {
+          "command": "autosurg.visualizeTensor",
+          "when": "inDebugMode",
+          "group": "1_visualize@1"
         },
         {
           "command": "autosurg.viewCloud",
-          "when": "inDebugMode && editorHasSelection && editorLangId == python",
-          "group": "3_visualize"
+          "when": "inDebugMode",
+          "group": "1_visualize@2"
         }
       ],
       "explorer/context": [

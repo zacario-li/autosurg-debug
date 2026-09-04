@@ -263,7 +263,7 @@ async function resolveExpression(arg: unknown): Promise<string | undefined> {
     return selected;
   }
   return vscode.window.showInputBox({
-    title: "View as Image / Tensor",
+    title: "AutoSurg: View as Image / Tensor",
     prompt: "Expression to visualize in the current debug frame",
     placeHolder: "image, pred[0], self.disp",
   });
@@ -1699,7 +1699,7 @@ export function renderHtml(webview: vscode.Webview, scriptUri: vscode.Uri): stri
         <div class="empty-state">
           <div class="halo">◈</div>
           <div class="k">Nothing loaded yet</div>
-          <div class="s">Pause the debugger, then right-click a tensor or Mat — or run "View Tensor…" on an expression.</div>
+          <div class="s">Pause the debugger, then right-click a tensor or Mat and pick AutoSurg &#9656; View as Image / Tensor — or run "AutoSurg: View as Image / Tensor" on an expression.</div>
         </div>
       </div>
       <div id="tip" hidden></div>

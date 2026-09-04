@@ -126,7 +126,7 @@ breakpoint:**
 
 After a breakpoint pauses execution, you can visually inspect `torch.Tensor`, `numpy.ndarray`, PIL images, OpenCV images, and C++ `cv::Mat`.
 
-1. Right-click a variable in the Variables or Watch pane and choose `View as Image / Tensor`.
+1. Right-click a variable in the Variables or Watch pane and choose **AutoSurg ▸ View as Image / Tensor**.
 2. Or select an expression in Python code and press `Ctrl+Alt+I` (`Cmd+Alt+I` on macOS).
 3. The view supports wheel zoom, drag-to-pan, Fit / 1:1, Batch/Channel slicing, pseudo-color, and BGR/RGB toggle.
 4. A pixel grid appears above 400% zoom; hovering shows coordinates and raw values.
@@ -143,7 +143,7 @@ Hover thumbnails can be disabled with the `autosurg.tensorHover` setting.
 
 Arrays with shape `(N, 3)` … `(N, 7)` (xyz, optional intensity or RGB), Open3D / trimesh point clouds, and `.ply` files are rendered as interactive 3D point clouds in the same viewer:
 
-1. Right-click a point-cloud variable while paused and choose `View as Image / Tensor`, force point-cloud rendering with `AutoSurg: View as Point Cloud (Force)` (Variables / Watch / selected code), or open a `.ply` file with `AutoSurg: Open Point Cloud (PLY)...` (also available from the Explorer right-click menu).
+1. Right-click a point-cloud variable while paused and choose **AutoSurg ▸ View as Image / Tensor**, force point-cloud rendering with **AutoSurg ▸ View as Point Cloud (Force)** (Variables / Watch / selected code), or open a `.ply` file with `AutoSurg: Open Point Cloud (PLY)...` (also available from the Explorer right-click menu).
 2. Drag to orbit, Shift+drag (or middle-drag) to pan, wheel to zoom, `Fit` to re-center.
 3. `Color`: Auto / Gray / Intensity / RGB / Height colormap; `Up`: choose the Z / Y / X up axis; `Size`: point size in pixels.
 4. Hover a point to see its index, coordinates, and color/intensity.

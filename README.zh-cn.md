@@ -123,7 +123,7 @@ Orchestrator 与 Supervisor 运行在同一个 `main.py` 进程中。对任意�
 
 在断点暂停后，可以用图形方式查看 `torch.Tensor`、`numpy.ndarray`、PIL Image、OpenCV 图像，以及 C++ `cv::Mat`。
 
-1. 在 Variables 或 Watch 窗口中右键变量，选择 `View as Image / Tensor`。
+1. 在 Variables 或 Watch 窗口中右键变量，选择 **AutoSurg ▸ 以图像 / Tensor 查看**。
 2. 也可以在 Python 代码中选中表达式后按 `Ctrl+Alt+I`（macOS 为 `Cmd+Alt+I`）。
 3. 视图支持滚轮缩放、拖拽平移、Fit / 1:1、Batch/Channel 切片、伪彩色和 BGR/RGB 切换。
 4. 放大到 400% 以上会显示像素网格；鼠标悬停会显示坐标和原始数值。
@@ -140,7 +140,7 @@ Orchestrator 与 Supervisor 运行在同一个 `main.py` 进程中。对任意�
 
 形状为 `(N, 3)` ～ `(N, 7)`（xyz，可带强度或 RGB）的数组、Open3D / trimesh 点云对象以及 `.ply` 文件，会在同一个查看器中以可交互的 3D 点云渲染：
 
-1. 暂停时右键点云变量选择 `View as Image / Tensor`；用 `AutoSurg: View as Point Cloud (Force)`（变量 / Watch 右键或选中代码）跳过自动判断强制按点云渲染；或用 `AutoSurg: Open Point Cloud (PLY)...` 打开 `.ply` 文件（资源管理器右键菜单也提供入口）。
+1. 暂停时右键点云变量选择 **AutoSurg ▸ 以图像 / Tensor 查看**；用 **AutoSurg ▸ 以点云查看 (强制)**（变量 / Watch 右键或选中代码）跳过自动判断强制按点云渲染；或用 `AutoSurg: Open Point Cloud (PLY)...` 打开 `.ply` 文件（资源管理器右键菜单也提供入口）。
 2. 拖拽旋转，Shift+拖拽（或中键拖拽）平移，滚轮缩放，`Fit` 重新居中。
 3. `Color` 可选 Auto / Gray / Intensity / RGB / Height 着色；`Up` 切换 Z / Y / X 上方向；`Size` 调节点大小。
 4. 鼠标悬停在点上可查看序号、坐标和颜色 / 强度值。
